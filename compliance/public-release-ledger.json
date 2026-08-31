@@ -1,0 +1,43 @@
+{
+  "schema_version": "neutral-public-release-ledger-v1",
+  "lane": "source-only-clean-development",
+  "decision": "NO_GO_PUBLIC_BINARY",
+  "public_source_candidate": false,
+  "binary_release_candidate": false,
+  "allowed_now": [
+    "neutral_source_development",
+    "synthetic_unit_tests",
+    "source_surface_scanning",
+    "private_local_compliance_review"
+  ],
+  "prohibited_now": [
+    "bundled_model_or_runtime",
+    "installer",
+    "release_archive",
+    "public_repository_publish",
+    "release_upload",
+    "production_claim"
+  ],
+  "open_gates": [
+    "project_source_license",
+    "dependency_closure",
+    "sbom_and_third_party_notices",
+    "model_and_tokenizer_redistribution",
+    "codec_redistribution",
+    "native_and_gpu_runtime_redistribution",
+    "playback_dependency_redistribution",
+    "alternative_voice_rights_and_consent",
+    "signed_manifest_launcher_and_installer",
+    "backup_restore_crash_and_cancel",
+    "physical_offline_clean_windows_beta",
+    "final_security_legal_and_human_acceptance"
+  ],
+  "candidate_evidence": {
+    "clean_export": "passed_one_hash_pinned_generic_source_file",
+    "public_surface_scan": "passed_precommit_candidate_archive_and_postcommit_tree_history",
+    "focused_tests": "passed_export_scanner_filename_plan_estimate_receipt_contracts",
+    "full_tests": "passed_53_with_3_platform_capability_skips",
+    "clean_commit": "passed",
+    "protected_tree_unchanged": "passed_exact_before_after_manifest_match"
+  }
+}

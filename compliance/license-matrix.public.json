@@ -1,0 +1,77 @@
+{
+  "schema_version": "neutral-license-matrix-v1",
+  "legal_conclusion": "none",
+  "components": [
+    {
+      "component_id": "new-neutral-source-lane",
+      "kind": "source",
+      "bundled": true,
+      "license_spdx": "NOASSERTION",
+      "license_text_present": false,
+      "redistribution_status": "BLOCKED_PENDING_SOURCE_LICENSE"
+    },
+    {
+      "component_id": "irodori-tts-compatibility",
+      "display_name": "Irodori-TTS compatible engine boundary",
+      "kind": "vendor-source-and-runtime",
+      "bundled": false,
+      "license_spdx": "NOASSERTION",
+      "redistribution_status": "NOT_APPROVED",
+      "required_use_of_name": "compatibility_and_attribution_only"
+    },
+    {
+      "component_id": "silentcipher-checkpoint",
+      "display_name": "SilentCipher checkpoint",
+      "kind": "model-checkpoint",
+      "bundled": false,
+      "license_spdx": "NOASSERTION",
+      "redistribution_status": "NOT_APPROVED"
+    },
+    {
+      "component_id": "modernbert-ja-tokenizer",
+      "display_name": "sbintuitions/modernbert-ja-310m tokenizer assets",
+      "kind": "tokenizer",
+      "bundled": false,
+      "license_spdx": "NOASSERTION",
+      "redistribution_status": "NOT_APPROVED"
+    },
+    {
+      "component_id": "semantic-dacvae-codec",
+      "display_name": "semantic-dacvae-japanese-32dim codec weights",
+      "kind": "codec-weights",
+      "bundled": false,
+      "license_spdx": "NOASSERTION",
+      "redistribution_status": "NOT_APPROVED"
+    },
+    {
+      "component_id": "sounddevice",
+      "kind": "python-playback-package",
+      "bundled": false,
+      "license_spdx": "MIT",
+      "notice_required": true,
+      "redistribution_status": "NOT_APPROVED_FOR_PUBLIC_RELEASE"
+    },
+    {
+      "component_id": "portaudio",
+      "kind": "native-playback-library",
+      "bundled": false,
+      "license_spdx": "MIT",
+      "notice_required": true,
+      "redistribution_status": "NOT_APPROVED_FOR_PUBLIC_RELEASE"
+    },
+    {
+      "component_id": "python-cuda-native-runtime",
+      "kind": "runtime-closure",
+      "bundled": false,
+      "license_spdx": "NOASSERTION",
+      "redistribution_status": "NOT_REVIEWED"
+    },
+    {
+      "component_id": "alternative-voice-assets",
+      "kind": "voice-profile-and-reference-audio",
+      "bundled": false,
+      "license_spdx": "NOASSERTION",
+      "redistribution_status": "RIGHTS_AND_CONSENT_REQUIRED"
+    }
+  ]
+}

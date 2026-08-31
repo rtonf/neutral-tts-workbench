@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Private compliance ledger",
+  "type": "object",
+  "required": [
+    "protected_tree_baseline",
+    "reference_source",
+    "export_decisions",
+    "delegation_evidence"
+  ],
+  "properties": {
+    "protected_tree_baseline": {"type": "object"},
+    "reference_source": {"type": "object"},
+    "export_decisions": {"type": "array"},
+    "delegation_evidence": {"type": "array"},
+    "private_scan_policy": {"type": "object"}
+  },
+  "additionalProperties": true
+}

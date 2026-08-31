@@ -1,0 +1,48 @@
+{
+  "schema_version": "neutral-source-asset-allowlist-v1",
+  "default": "deny",
+  "source_paths": [
+    "AGENTS.md",
+    ".gitignore",
+    "README.md",
+    "pyproject.toml",
+    "src/neutral_tts/**/*.py",
+    "tests/**/*.py",
+    "tools/**/*.py",
+    "config/*.json",
+    "docs/*.md",
+    "compliance/*.json",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "asset_paths": [],
+  "required_disclosure_paths": [
+    "THIRD_PARTY_NOTICES.md",
+    "docs/RELEASE_NO_GO.md",
+    "compliance/license-matrix.public.json"
+  ],
+  "always_deny_extensions": [
+    ".wav",
+    ".mp3",
+    ".flac",
+    ".ogg",
+    ".safetensors",
+    ".ckpt",
+    ".pt",
+    ".pth",
+    ".egg-link",
+    ".dll",
+    ".pyd",
+    ".so",
+    ".dylib",
+    ".exe",
+    ".msi",
+    ".db",
+    ".sqlite",
+    ".jsonl"
+  ],
+  "always_deny_names": [
+    "pyvenv.cfg",
+    "artifacts.lock.json",
+    "playback.lock.json"
+  ]
+}
