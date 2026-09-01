@@ -8,20 +8,26 @@
     "neutral_source_development",
     "synthetic_unit_tests",
     "source_surface_scanning",
-    "private_local_compliance_review"
+    "private_local_compliance_review",
+    "framework_neutral_application_service",
+    "explicit_silence_only_demo_non_synthesis",
+    "deterministic_spdx_and_cyclonedx_metadata",
+    "local_internal_source_review_archive"
   ],
   "prohibited_now": [
     "bundled_model_or_runtime",
     "installer",
-    "release_archive",
+    "public_release_archive",
+    "source_review_archive_redistribution",
     "public_repository_publish",
     "release_upload",
-    "production_claim"
+    "production_claim",
+    "speech_synthesis_claim_for_silence_demo"
   ],
   "open_gates": [
     "project_source_license",
-    "dependency_closure",
-    "sbom_and_third_party_notices",
+    "public_dependency_closure_approval",
+    "public_sbom_and_notice_legal_acceptance",
     "model_and_tokenizer_redistribution",
     "codec_redistribution",
     "native_and_gpu_runtime_redistribution",
@@ -35,9 +41,13 @@
   "candidate_evidence": {
     "clean_export": "passed_one_hash_pinned_generic_source_file",
     "public_surface_scan": "passed_precommit_candidate_archive_and_postcommit_tree_history",
-    "focused_tests": "passed_export_scanner_filename_plan_estimate_receipt_contracts",
-    "full_tests": "passed_53_with_3_platform_capability_skips",
-    "clean_commit": "passed",
+    "application_service_tests": "passed_11_with_1_platform_capability_skip",
+    "supply_chain_tests": "passed_13_with_1_platform_capability_skip",
+    "dependency_closure": "internal_validation_passed_and_public_validation_rejected",
+    "source_metadata": "deterministic_spdx_2_3_and_cyclonedx_1_7_from_exact_git_tree",
+    "source_archive": "fresh_fixture_repeated_builds_byte_identical_and_independently_verified",
+    "full_tests": "passed_77_with_5_platform_capability_skips",
+    "clean_commit": "passed_single_logical_commit_postcheck",
     "protected_tree_unchanged": "passed_exact_before_after_manifest_match"
   }
 }

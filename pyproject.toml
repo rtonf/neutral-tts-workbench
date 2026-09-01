@@ -5,6 +5,9 @@ description = "Source-only neutral TTS planning, estimation, and safe output nam
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+neutral-tts = "neutral_tts.cli:main"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

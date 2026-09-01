@@ -93,3 +93,30 @@ Only the receipt-facing calibration entry point is public. Its parser requires
 the exact receipt schema and exact plan, estimate, and actual aggregate shapes;
 their digests, keys, and counts must agree. Unknown fields and incomplete or
 forged receipt-like dictionaries are rejected rather than used as history.
+
+## Application admission and demo contract
+
+`ApplicationService` is the framework-neutral boundary between persisted
+settings, preview, backend authorization, safe publication, and receipt
+feedback. Admission recomputes the pure preview and binds source/settings,
+plan, estimate, collision-resolved filename, output-directory identity, and
+staging-directory identity. Any drift rejects the request before backend use.
+The final collision selection must still equal the previewed candidate; it may
+not silently move to a suffix after the user approved a preview.
+
+The backend receives the immutable internal text plan and one fresh private
+staging pathname. Raw plan text is necessary for an eventual approved adapter,
+but is never part of the application view-model or receipt. Publication remains
+bound to the output directory verified at admission even if a mutable settings
+store changes while the backend is running.
+
+Before the atomic no-replace publication, the service checks the backend's
+actual sample rate, duration, byte size, and aggregate plan counts against the
+staged PCM16 WAV and the admitted plan. An invalid backend cannot publish first
+and fail receipt validation afterward.
+
+The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
+It writes silence, not speech, and its code and JSON output must always say so.
+It is not an engine implementation, tokenizer compatibility result, model
+test, audio-quality test, or Production evidence. See
+`docs/APPLICATION_WORKFLOW.md` for the complete port and CLI contract.

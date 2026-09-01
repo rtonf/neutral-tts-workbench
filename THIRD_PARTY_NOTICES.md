@@ -24,4 +24,12 @@ permission to redistribute:
 Before any component is added, supply its exact version/revision, upstream
 source, complete license text, copyright notice, required notices, content
 hashes, dependency closure, and written redistribution decision. Generate the
-SBOM and signed manifest from the exact approved candidate, not from this list.
+SBOM and manifest from the exact candidate, not from this prose list.
+
+The machine-checked decision source is
+`config/dependency-closure.lock.json`. Unknown URLs, versions, hashes, or rights
+stay explicit and fail closed. For a local internal source-review archive,
+`tools/generate_source_metadata.py` deterministically produces exact-commit
+SPDX 2.3 and CycloneDX 1.7 documents for included project files, plus a
+generated notice that lists these excluded records. Neither generated metadata nor this notice asserts
+permission to redistribute an excluded component.

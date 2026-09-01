@@ -3,6 +3,7 @@
   "default": "deny",
   "source_paths": [
     "AGENTS.md",
+    ".gitattributes",
     ".gitignore",
     "README.md",
     "pyproject.toml",
@@ -12,9 +13,23 @@
     "config/*.json",
     "docs/*.md",
     "compliance/*.json",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "SBOM.cdx.json",
+    "SBOM.spdx.json",
+    "SOURCE_MANIFEST.json",
+    "THIRD_PARTY_NOTICES.generated.md"
   ],
   "asset_paths": [],
+  "disclosure_paths": [
+    "THIRD_PARTY_NOTICES.md",
+    "docs/RELEASE_NO_GO.md",
+    "compliance/license-matrix.public.json",
+    "config/dependency-closure.lock.json",
+    "SBOM.cdx.json",
+    "SBOM.spdx.json",
+    "SOURCE_MANIFEST.json",
+    "THIRD_PARTY_NOTICES.generated.md"
+  ],
   "required_disclosure_paths": [
     "THIRD_PARTY_NOTICES.md",
     "docs/RELEASE_NO_GO.md",

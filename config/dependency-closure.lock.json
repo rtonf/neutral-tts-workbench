@@ -1,0 +1,141 @@
+{
+  "schema_version": "neutral-dependency-closure-v1",
+  "baseline_commit": "289bfbf4c5c312e8fec4c639a62193a4a5d47453",
+  "source_commit_policy": "RESOLVE_EXACT_COMMIT_ARGUMENT_AT_BUILD",
+  "project": {
+    "id": "new-neutral-source-lane",
+    "display_name": "Neutral TTS Workbench",
+    "license_spdx": "NOASSERTION",
+    "license_status": "BLOCKED_PENDING_SOURCE_LICENSE",
+    "public_distribution": false
+  },
+  "policy": {
+    "allowed_audiences": ["INTERNAL_SOURCE_REVIEW"],
+    "public_bundle_requires_approval": true,
+    "source_only": true
+  },
+  "source_candidate": {
+    "audience": "INTERNAL_SOURCE_REVIEW",
+    "public_distribution": false,
+    "reason": "Source review only while the project license and every external redistribution decision remain unresolved."
+  },
+  "components": [
+    {
+      "component_id": "project-source",
+      "display_name": "Neutral TTS Workbench source",
+      "kind": "source",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": "RESOLVED_AT_BUILD_FROM_EXACT_COMMIT_ARGUMENT",
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "BLOCKED_PENDING_SOURCE_LICENSE",
+      "bundle": true,
+      "bundle_reason": "Source-only internal review candidate; not a third-party payload."
+    },
+    {
+      "component_id": "irodori-tts-compatibility",
+      "display_name": "Irodori-TTS compatible engine boundary",
+      "kind": "vendor-source-and-runtime",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "NOT_APPROVED",
+      "bundle": false,
+      "bundle_reason": "Compatibility boundary only; no source or runtime payload is bundled."
+    },
+    {
+      "component_id": "silentcipher-checkpoint",
+      "display_name": "SilentCipher checkpoint",
+      "kind": "model-checkpoint",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "NOT_APPROVED",
+      "bundle": false,
+      "bundle_reason": "Model payload is explicitly excluded from this source-only lane."
+    },
+    {
+      "component_id": "modernbert-ja-tokenizer",
+      "display_name": "sbintuitions/modernbert-ja-310m tokenizer assets",
+      "kind": "tokenizer",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "NOT_APPROVED",
+      "bundle": false,
+      "bundle_reason": "Tokenizer payload is explicitly excluded from this source-only lane."
+    },
+    {
+      "component_id": "semantic-dacvae-codec",
+      "display_name": "semantic-dacvae-japanese-32dim codec weights",
+      "kind": "codec-weights",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "NOT_APPROVED",
+      "bundle": false,
+      "bundle_reason": "Codec payload is explicitly excluded from this source-only lane."
+    },
+    {
+      "component_id": "sounddevice",
+      "display_name": "sounddevice playback package",
+      "kind": "python-playback-package",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "MIT",
+      "license_status": "NOT_APPROVED",
+      "bundle": false,
+      "bundle_reason": "Playback dependency is not approved for redistribution."
+    },
+    {
+      "component_id": "portaudio",
+      "display_name": "PortAudio native playback library",
+      "kind": "native-playback-library",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "MIT",
+      "license_status": "NOT_APPROVED",
+      "bundle": false,
+      "bundle_reason": "Native playback dependency is not approved for redistribution."
+    },
+    {
+      "component_id": "python-cuda-native-runtime",
+      "display_name": "Python, CUDA, and native runtime closure",
+      "kind": "runtime-closure",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "NOT_REVIEWED",
+      "bundle": false,
+      "bundle_reason": "Runtime closure is outside source-only scope and has not been reviewed."
+    },
+    {
+      "component_id": "alternative-voice-assets",
+      "display_name": "Alternative voice profiles and reference audio",
+      "kind": "voice-assets",
+      "source_url": null,
+      "wheel_url": null,
+      "source_commit_or_version": null,
+      "sha256": null,
+      "license_spdx": "NOASSERTION",
+      "license_status": "RIGHTS_AND_CONSENT_REQUIRED",
+      "bundle": false,
+      "bundle_reason": "Voice assets require separate rights and consent review."
+    }
+  ]
+}

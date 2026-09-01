@@ -32,3 +32,11 @@ Current blockers include:
 
 Therefore do not create or publish an installer, release archive, GitHub
 repository/release, model/runtime bundle, or Production claim from this lane.
+
+A deterministic ZIP explicitly marked `INTERNAL_SOURCE_REVIEW` may be created
+locally under ignored staging to verify source-only packaging. That ZIP is
+non-public compliance evidence, contains only an exact allowlisted Git source
+tree plus generated source metadata, and does not satisfy any open license,
+redistribution, binary, installer, signing, clean-device, or human-acceptance
+gate. The builder and verifier reject a public audience while these gates are
+open.

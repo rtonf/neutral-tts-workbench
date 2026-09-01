@@ -49,3 +49,9 @@ surface and the `--root` directory is only a safe scanner anchor.
 
 The scan report is evidence about the exact input only. It is not a license
 decision, redistribution approval, binary acceptance, or Production evidence.
+
+The internal source-review archive builder invokes the same archive scan before
+atomic promotion, and the independent verifier runs it again. Exact build and
+verification commands, manifest semantics, and reproducibility checks are in
+`docs/SOURCE_ONLY_PACKAGING.md`. These local archives must remain in ignored
+staging; a clean scan does not turn them into public release artifacts.

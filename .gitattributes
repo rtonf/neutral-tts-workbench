@@ -1,0 +1,2 @@
+# The archive gate compares this reviewed lock with its committed blob exactly.
+config/dependency-closure.lock.json text eol=lf

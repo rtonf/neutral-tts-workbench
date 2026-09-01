@@ -1,13 +1,16 @@
 # Neutral TTS Workbench (development name)
 
-This is a new, source-only TTS development lane for two public-facing
-capabilities:
+This is a new, source-only TTS development lane for four bounded capabilities:
 
 1. safe, previewable WAV filename templates with Windows-safe normalization
    and no-replace collision sequencing;
 2. a pre-generation estimate that reuses one deterministic text plan and shows
    counts plus coarse duration, storage, staging, and device/quality timing
-   ranges without invoking a sampler.
+   ranges without invoking a sampler;
+3. a framework-neutral application service and CLI that connect settings,
+   preview, generation admission, safe publication, and receipt feedback;
+4. a fail-closed dependency lock plus deterministic SPDX/CycloneDX source-archive tools
+   for local internal source review.
 
 The working display name is defined once in `src/neutral_tts/identity.py`. The
 Python module name is deliberately neutral. This repository is not an official
@@ -16,12 +19,17 @@ binary payload.
 
 ## Current status
 
-The lane is `NO-GO` for publication, packaging, installers, model/runtime
-bundling, and Production claims. See `docs/RELEASE_NO_GO.md` and the public
-license matrix for the unresolved gates.
+The lane is `NO-GO` for public publication, public release packaging,
+installers, model/runtime bundling, and Production claims. A local,
+source-only `INTERNAL_SOURCE_REVIEW` archive is permitted as compliance
+evidence; it is not redistribution approval or a release candidate. See
+`docs/RELEASE_NO_GO.md` and the public license matrix for the unresolved gates.
 
-The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the clean
-export and scan commands are documented in `docs/EXPORT_AND_SCAN.md`.
+The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the
+application flow and explicit silence-only demo are documented in
+`docs/APPLICATION_WORKFLOW.md`; and reproducible internal source packaging is
+documented in `docs/SOURCE_ONLY_PACKAGING.md`. Clean export and surface-scan
+commands remain in `docs/EXPORT_AND_SCAN.md`.
 
 ## Intended source workflow
 
