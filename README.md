@@ -1,6 +1,6 @@
 # Neutral TTS Workbench (development name)
 
-This is a new, source-only TTS development lane for four bounded capabilities:
+This is a neutral, source-only TTS development lane for six bounded capabilities:
 
 1. safe, previewable WAV filename templates with Windows-safe normalization
    and no-replace collision sequencing;
@@ -10,7 +10,12 @@ This is a new, source-only TTS development lane for four bounded capabilities:
 3. a framework-neutral application service and CLI that connect settings,
    preview, generation admission, safe publication, and receipt feedback;
 4. a fail-closed dependency lock plus deterministic SPDX/CycloneDX source-archive tools
-   for local internal source review.
+   for local internal source review;
+5. cancellation/crash reconciliation and versioned, integrity-checked data
+   backup with automatic pre-restore safety backup and rollback;
+6. a source-only owned-files layout contract for synthetic install, update,
+   rollback, and owned-only uninstall testing, plus unsigned provenance and
+   clean-Windows acceptance schemas.
 
 The working display name is defined once in `src/neutral_tts/identity.py`. The
 Python module name is deliberately neutral. This repository is not an official
@@ -29,7 +34,10 @@ The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the
 application flow and explicit silence-only demo are documented in
 `docs/APPLICATION_WORKFLOW.md`; and reproducible internal source packaging is
 documented in `docs/SOURCE_ONLY_PACKAGING.md`. Clean export and surface-scan
-commands remain in `docs/EXPORT_AND_SCAN.md`.
+commands remain in `docs/EXPORT_AND_SCAN.md`. Plain-language data protection is
+in `docs/DATA_PROTECTION.md`; lifecycle details are in
+`docs/INSTALL_UPDATE_CONTRACT.md`; and the unsigned release boundary is in
+`docs/RELEASE_FOUNDATION.md`.
 
 ## Intended source workflow
 

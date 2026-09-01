@@ -10,9 +10,11 @@ or Production artifact.
 `config/dependency-closure.schema.json` defines the exact lock shape and
 `config/dependency-closure.lock.json` records the current decisions. Every
 component has fields for its source URL, wheel/archive URL, exact commit or
-version, SHA-256, SPDX license expression/status, bundle decision, and reason.
-Unknown facts remain `null` with an unapproved status; they are never filled by
-inference. The only bundled component is the exact project source Git tree.
+version, SHA-256, SPDX license expression/status, redistribution status,
+notice requirement/status, approval status/authority, bundle decision, and
+reason. Unknown facts remain `null` with an unapproved status; they are never
+filled by inference. The only bundled component is the exact project source
+Git tree.
 
 Validate the internal lock:
 

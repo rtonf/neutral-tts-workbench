@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:source-provenance:v1",
+  "title": "Deterministic source-contract provenance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "build_kind",
+    "source",
+    "materials",
+    "network_used",
+    "external_payloads",
+    "claims_slsa_conformance"
+  ],
+  "properties": {
+    "schema_version": {"const": "neutral-source-provenance-v1"},
+    "candidate_id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,94}[a-z0-9])?$"},
+    "build_kind": {"const": "SOURCE_CONTRACT_ONLY"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "materials": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "sha256"],
+        "properties": {
+          "name": {
+            "enum": [
+              "dependency_lock_sha256",
+              "install_layout_manifest_sha256",
+              "sbom_cyclonedx_sha256",
+              "sbom_spdx_sha256",
+              "source_archive_sha256"
+            ]
+          },
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "network_used": {"const": false},
+    "external_payloads": {"type": "array", "maxItems": 0},
+    "claims_slsa_conformance": {"const": false}
+  }
+}

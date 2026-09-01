@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Neutral TTS deterministic backup manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "categories", "entries", "aggregate_sha256"],
+  "properties": {
+    "schema_version": { "const": "neutral-tts-backup-v1" },
+    "categories": {
+      "const": ["dictionary", "history", "settings", "voice_profiles"]
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 255,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "category", "size", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(settings|history|dictionary|voice_profiles)/[A-Za-z0-9_. -]+(?:/[A-Za-z0-9_. -]+)*$"
+          },
+          "category": {
+            "enum": ["settings", "history", "dictionary", "voice_profiles"]
+          },
+          "size": { "type": "integer", "minimum": 0, "maximum": 8388608 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "aggregate_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

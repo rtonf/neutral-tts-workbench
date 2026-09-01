@@ -1,0 +1,71 @@
+{
+  "schema_version": "neutral-distribution-gates-v1",
+  "release_decision": "NO_GO_PUBLIC_BINARY",
+  "decision_authority": null,
+  "gates": [
+    {
+      "gate_id": "source_license",
+      "status": "BLOCKED_PENDING_AUTHORITY_DECISION",
+      "payload_present": true,
+      "required_evidence": ["license_expression", "license_text", "copyright_notice", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "model",
+      "status": "NOT_APPROVED",
+      "payload_present": false,
+      "required_evidence": ["exact_version", "source_url", "artifact_sha256", "license", "redistribution_permission", "notices", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "tokenizer",
+      "status": "NOT_APPROVED",
+      "payload_present": false,
+      "required_evidence": ["exact_version", "source_url", "artifact_sha256", "license", "redistribution_permission", "notices", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "codec",
+      "status": "NOT_APPROVED",
+      "payload_present": false,
+      "required_evidence": ["exact_version", "source_url", "artifact_sha256", "license", "redistribution_permission", "notices", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "native_runtime",
+      "status": "NOT_REVIEWED",
+      "payload_present": false,
+      "required_evidence": ["exact_dependency_closure", "artifact_sha256", "licenses", "redistribution_permissions", "notices", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "playback",
+      "status": "NOT_APPROVED",
+      "payload_present": false,
+      "required_evidence": ["exact_package_version", "exact_native_version", "source_urls", "artifact_sha256", "licenses", "notices", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "installer",
+      "status": "CONTRACT_ONLY_NO_ARTIFACT",
+      "payload_present": false,
+      "required_evidence": ["owned_files_manifest", "clean_device_results", "uninstall_results", "rollback_results", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    },
+    {
+      "gate_id": "signing",
+      "status": "UNSIGNED",
+      "payload_present": false,
+      "required_evidence": ["signature_target_hash", "approved_algorithm", "certificate_identity", "timestamp_evidence", "signature_verification", "authority_approval"],
+      "approval_authority": null,
+      "approval_record": null
+    }
+  ]
+}

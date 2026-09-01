@@ -120,3 +120,35 @@ It writes silence, not speech, and its code and JSON output must always say so.
 It is not an engine implementation, tokenizer compatibility result, model
 test, audio-quality test, or Production evidence. See
 `docs/APPLICATION_WORKFLOW.md` for the complete port and CLI contract.
+
+## Recovery and backup contract
+
+Each recoverable run owns a unique staging directory and a durable canonical
+journal. State is flushed at externally visible transitions. Publication uses
+no-replace hard links and deterministic collision names, so an existing output
+is preserved. Startup reconciliation quarantines malformed, incomplete,
+cancelled, failed, and orphan staging state without deleting a completed
+output. Fault injection covers ready and publication boundaries.
+
+Backups include exactly settings, history, dictionary data, and approved
+generic voice-profile metadata. The versioned manifest lists all supported
+categories plus each relative path, category, size, SHA-256, and an aggregate
+SHA-256. Restore validates the complete deterministic ZIP before mutation,
+creates and validates a safety backup, stages all categories, and rolls every
+changed category back if any transition fails. A durable phase journal lets
+startup reconciliation restore the safety snapshot after process death. See
+`docs/DATA_PROTECTION.md`.
+
+## Source-only lifecycle and release-foundation contract
+
+The install-layout contract accepts only manifest-bound source files under one
+application root with an external user-data root. Fresh install never replaces
+an existing root. Update retains the prior complete layout, and explicit
+rollback retains the displaced layout. Uninstall relocates only exact
+manifest-owned files; user data is never an implicit target. Each transition is
+journaled before mutation and has an idempotent startup reconciler.
+
+The release record binds an internal candidate identifier to exact source and
+artifact hashes, provenance, update/rollback rules, a signature target, and
+clean-Windows checks. It can represent only an unsigned, pending,
+`NO_GO_PUBLIC_BINARY` state. No launcher or installer artifact is produced.

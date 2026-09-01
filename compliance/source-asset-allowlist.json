@@ -24,6 +24,7 @@
     "THIRD_PARTY_NOTICES.md",
     "docs/RELEASE_NO_GO.md",
     "compliance/license-matrix.public.json",
+    "compliance/distribution-gates.public.json",
     "config/dependency-closure.lock.json",
     "SBOM.cdx.json",
     "SBOM.spdx.json",
@@ -33,7 +34,8 @@
   "required_disclosure_paths": [
     "THIRD_PARTY_NOTICES.md",
     "docs/RELEASE_NO_GO.md",
-    "compliance/license-matrix.public.json"
+    "compliance/license-matrix.public.json",
+    "compliance/distribution-gates.public.json"
   ],
   "always_deny_extensions": [
     ".wav",

@@ -12,12 +12,21 @@
     "project": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "display_name", "license_spdx", "license_status", "public_distribution"],
+      "required": [
+        "id", "display_name", "license_spdx", "license_status", "redistribution_status",
+        "notice_required", "notice_status", "approval_status", "approval_authority",
+        "public_distribution"
+      ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
         "display_name": {"type": "string", "pattern": "^(?! *$).+$"},
         "license_spdx": {"type": "string", "pattern": "^(?:NOASSERTION|[A-Za-z0-9][A-Za-z0-9.+-]*(?:-[A-Za-z0-9.+-]+)*)$"},
         "license_status": {"type": "string", "pattern": "^(?! *$).+$"},
+        "redistribution_status": {"type": "string", "pattern": "^(?! *$).+$"},
+        "notice_required": {"type": ["boolean", "null"]},
+        "notice_status": {"type": "string", "pattern": "^(?! *$).+$"},
+        "approval_status": {"type": "string", "pattern": "^(?! *$).+$"},
+        "approval_authority": {"type": ["string", "null"], "minLength": 1},
         "public_distribution": {"const": false}
       }
     },
@@ -47,7 +56,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["component_id", "display_name", "kind", "source_url", "wheel_url", "source_commit_or_version", "sha256", "license_spdx", "license_status", "bundle", "bundle_reason"],
+        "required": [
+          "component_id", "display_name", "kind", "source_url", "wheel_url",
+          "source_commit_or_version", "sha256", "license_spdx", "license_status",
+          "redistribution_status", "notice_required", "notice_status", "approval_status",
+          "approval_authority", "bundle", "bundle_reason"
+        ],
         "properties": {
           "component_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
           "display_name": {"type": "string", "pattern": "^(?! *$).+$"},
@@ -58,9 +72,13 @@
           "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-fA-F]{64}$"},
           "license_spdx": {"type": ["string", "null"], "pattern": "^(?:NOASSERTION|[A-Za-z0-9][A-Za-z0-9.+-]*(?:-[A-Za-z0-9.+-]+)*)$"},
           "license_status": {"type": ["string", "null"], "pattern": "^(?! *$).+$"},
+          "redistribution_status": {"type": "string", "pattern": "^(?! *$).+$"},
+          "notice_required": {"type": ["boolean", "null"]},
+          "notice_status": {"type": "string", "pattern": "^(?! *$).+$"},
+          "approval_status": {"type": "string", "pattern": "^(?! *$).+$"},
+          "approval_authority": {"type": ["string", "null"], "minLength": 1},
           "bundle": {"type": "boolean"},
-          "bundle_reason": {"type": "string", "pattern": "^(?! *$).+$"},
-          "notice_required": {"type": "boolean"}
+          "bundle_reason": {"type": "string", "pattern": "^(?! *$).+$"}
         },
         "allOf": [
           {

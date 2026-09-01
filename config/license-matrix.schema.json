@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:license-matrix:v2",
+  "title": "Exact public license and rights matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "legal_conclusion", "decision_authority", "components"],
+  "properties": {
+    "schema_version": {"const": "neutral-license-matrix-v2"},
+    "legal_conclusion": {"const": "none"},
+    "decision_authority": {"type": "null"},
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "component_id", "display_name", "kind", "bundled", "exact_version",
+          "source_url", "artifact_url", "sha256", "license_spdx", "license_status",
+          "redistribution_status", "notice_required", "notice_status", "approval_status",
+          "approval_authority"
+        ],
+        "properties": {
+          "component_id": {"type": "string", "minLength": 1},
+          "display_name": {"type": "string", "minLength": 1},
+          "kind": {"type": "string", "minLength": 1},
+          "bundled": {"type": "boolean"},
+          "exact_version": {"type": ["string", "null"], "minLength": 1},
+          "source_url": {"type": ["string", "null"], "minLength": 1},
+          "artifact_url": {"type": ["string", "null"], "minLength": 1},
+          "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+          "license_spdx": {"type": "string", "minLength": 1},
+          "license_status": {"type": "string", "minLength": 1},
+          "redistribution_status": {"type": "string", "minLength": 1},
+          "notice_required": {"type": ["boolean", "null"]},
+          "notice_status": {"type": "string", "minLength": 1},
+          "approval_status": {"type": "string", "minLength": 1},
+          "approval_authority": {"type": ["string", "null"], "minLength": 1},
+          "required_use_of_name": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

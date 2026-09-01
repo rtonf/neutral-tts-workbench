@@ -1,15 +1,15 @@
 # Clean public-source lane policy
 
 These instructions apply to the root agent and every delegated agent in this
-repository. This repository is a new, neutral, source-only development lane.
-It is not a modification, continuation, release branch, or package rebuild of
-the separately accepted personal product.
+repository. This repository is a neutral, source-only development lane whose
+public identity and capabilities are defined entirely by its current target
+state.
 
 ## Protected and reference trees
 
-- The exact protected personal-product root is recorded only in the ignored
-  private compliance ledger. Never edit, overwrite, delete, move, regenerate,
-  package from, or use it as a test-output destination.
+- The exact protected read-only root is recorded only in the ignored private
+  compliance ledger. Never edit, overwrite, delete, move, regenerate, package
+  from, or use it as a test-output destination.
 - Read the protected tree only to compute the approved before/after immutable
   manifest: sorted relative paths, file sizes, per-file SHA-256 values, and
   directory paths. Stop immediately if the after value differs.
@@ -22,9 +22,9 @@ the separately accepted personal product.
 
 ## Public surface construction
 
-- Construct the public surface from the approved current-state allowlist.
-  Never copy a broader tree and then remove private, historical, branded, or
-  unapproved material.
+- Construct the public surface from the approved current-state allowlist and
+  the positive `TARGET_STATE` brief. Do not construct a broad candidate and
+  subtract material afterward.
 - Keep the neutral working product name in `src/neutral_tts/identity.py`.
   Other source and documentation must reference that setting rather than
   inventing or hard-coding another product identity.
@@ -38,6 +38,23 @@ the separately accepted personal product.
   payloads, and unapproved native dependencies must never enter the public
   source tree, Git history, staging candidate, archive, installer, metadata, or
   binary strings.
+
+## Pink Elephant Guard
+
+- `TARGET_STATE` is the sole source for public names, claims, examples,
+  screenshots, sample data, and feature descriptions.
+- `SURFACE` includes the README, documentation, source comments and strings,
+  UI and CLI output, tests and samples, schemas, notices, SBOMs, candidate
+  trees, reachable Git history, archives, and future binary strings.
+- Detailed negative comparison rules live only in the ignored private scan
+  policy. Public files must not reproduce, explain, paraphrase, or draw
+  attention to those rules.
+- `VISIBLE_EXCEPTIONS` are limited to exact license, copyright, compatibility,
+  safety, and audit disclosures in paths explicitly scoped by the allowlist.
+  An exception never suppresses credential, local-path, or user-data checks.
+- Before accepting a candidate, scan literal, semantic, rationale, and
+  attention-leak classes across the candidate tree, reachable Git history,
+  every archive, and any package or sample surface in scope.
 
 ## Release status
 
@@ -78,6 +95,10 @@ the separately accepted personal product.
 - Keep at most two delegated agents active. Give each agent disjoint file
   ownership. Limit review/fix work to two cycles and do not allow unbounded
   child spawning.
+- Recovery/data-integrity and release-boundary work requires a final adversarial
+  reviewer at `max`. Any serious finding must be fixed and returned to that
+  same reviewer once; a second serious finding in the same category stops the
+  candidate rather than starting an unbounded cycle.
 
 ## Stop and reporting rules
 

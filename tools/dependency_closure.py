@@ -30,7 +30,8 @@ _EXTERNAL_APPROVED = {"APPROVED", "APPROVED_FOR_PUBLIC", "PUBLIC_APPROVED"}
 _REQUIRED_COMPONENT_FIELDS = {
     "component_id", "display_name", "kind", "source_url", "wheel_url",
     "source_commit_or_version", "sha256", "license_spdx", "license_status",
-    "bundle", "bundle_reason",
+    "redistribution_status", "notice_required", "notice_status",
+    "approval_status", "approval_authority", "bundle", "bundle_reason",
 }
 _SPDX_IDENTIFIER = re.compile(r"^(?:NOASSERTION|[A-Za-z0-9][A-Za-z0-9.+-]*(?:-[A-Za-z0-9.+-]+)*)$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
@@ -70,6 +71,12 @@ def _optional_text(value: Any, field: str, component: str) -> str | None:
     return _non_placeholder(value, field, component)
 
 
+def _status_text(value: Any, field: str, component: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip() or _CONTROL.search(value):
+        raise DependencyClosureError(f"{component}: {field} must be canonical non-empty status text")
+    return value
+
+
 def _validate_url(value: Any, field: str, component: str) -> None:
     if value is None:
         return
@@ -92,8 +99,8 @@ def _validate_license(value: Any, component: str) -> None:
 def _validate_component(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise DependencyClosureError("each dependency component must be an object")
-    if set(raw) - (_REQUIRED_COMPONENT_FIELDS | {"notice_required"}):
-        raise DependencyClosureError(f"component has unknown fields: {sorted(set(raw) - (_REQUIRED_COMPONENT_FIELDS | {'notice_required'}))}")
+    if set(raw) - _REQUIRED_COMPONENT_FIELDS:
+        raise DependencyClosureError(f"component has unknown fields: {sorted(set(raw) - _REQUIRED_COMPONENT_FIELDS)}")
     missing = _REQUIRED_COMPONENT_FIELDS - set(raw)
     if missing:
         raise DependencyClosureError(f"component missing fields: {sorted(missing)}")
@@ -106,13 +113,23 @@ def _validate_component(raw: Any) -> dict[str, Any]:
         result[field] = _non_placeholder(raw[field], field, cid)
     if not isinstance(raw["bundle"], bool):
         raise DependencyClosureError(f"{cid}: bundle must be boolean")
-    for field in ("source_url", "wheel_url", "source_commit_or_version", "sha256", "license_spdx", "license_status", "bundle_reason"):
+    for field in (
+        "source_url", "wheel_url", "source_commit_or_version", "sha256", "license_spdx",
+        "license_status", "redistribution_status", "notice_status", "approval_status",
+        "approval_authority", "bundle_reason",
+    ):
         value = raw[field]
         if value is not None and not isinstance(value, str):
             raise DependencyClosureError(f"{cid}: {field} must be a string or null")
     _validate_url(raw["source_url"], "source_url", cid)
     _validate_url(raw["wheel_url"], "wheel_url", cid)
     _validate_license(raw["license_spdx"], cid)
+    for field in ("redistribution_status", "notice_status", "approval_status"):
+        result[field] = _status_text(raw[field], field, cid)
+    if raw["approval_authority"] is not None:
+        result["approval_authority"] = _non_placeholder(
+            raw["approval_authority"], "approval_authority", cid
+        )
     for field in ("source_commit_or_version", "license_spdx", "license_status", "bundle_reason"):
         if cid == "project-source" and field in {"license_spdx", "license_status"}:
             if not isinstance(raw[field], str) or not raw[field].strip():
@@ -128,8 +145,8 @@ def _validate_component(raw: Any) -> dict[str, Any]:
     _non_placeholder(raw["bundle_reason"], "bundle_reason", cid)
     if raw["sha256"] is not None and (not isinstance(raw["sha256"], str) or not _SHA256.fullmatch(raw["sha256"])):
         raise DependencyClosureError(f"{cid}: sha256 must be an exact 64-character SHA-256 when supplied")
-    if raw.get("notice_required") is not None and not isinstance(raw["notice_required"], bool):
-        raise DependencyClosureError(f"{cid}: notice_required must be boolean")
+    if raw["notice_required"] is not None and not isinstance(raw["notice_required"], bool):
+        raise DependencyClosureError(f"{cid}: notice_required must be boolean or null")
     if raw["bundle"] and cid != "project-source":
         # A bundled external artifact must be reproducibly identifiable.  URL
         # fields are intentionally both required: a source URL and the exact
@@ -143,6 +160,10 @@ def _validate_component(raw: Any) -> dict[str, Any]:
             raise DependencyClosureError(f"{cid}: bundled external component has no asserted SPDX license")
         if raw["license_status"].strip().upper() not in _EXTERNAL_APPROVED:
             raise DependencyClosureError(f"{cid}: bundled external component is not license-approved")
+        if raw["redistribution_status"].strip().upper() not in _EXTERNAL_APPROVED:
+            raise DependencyClosureError(f"{cid}: bundled external component is not redistribution-approved")
+        if raw["approval_status"].strip().upper() not in _EXTERNAL_APPROVED:
+            raise DependencyClosureError(f"{cid}: bundled external component lacks approval authority")
     elif raw["bundle"] and cid == "project-source":
         if not isinstance(raw["bundle_reason"], str) or not raw["bundle_reason"].strip():
             raise DependencyClosureError("project-source requires a bundle reason")
@@ -167,7 +188,11 @@ def validate_lock(lock: Mapping[str, Any], *, public: bool = False, audience: st
     if lock["source_commit_policy"] != "RESOLVE_EXACT_COMMIT_ARGUMENT_AT_BUILD":
         raise DependencyClosureError("source_commit_policy must resolve the exact build commit argument")
     project = lock["project"]
-    if not isinstance(project, Mapping) or set(project) != {"id", "display_name", "license_spdx", "license_status", "public_distribution"}:
+    if not isinstance(project, Mapping) or set(project) != {
+        "approval_authority", "approval_status", "display_name", "id", "license_spdx",
+        "license_status", "notice_required", "notice_status", "public_distribution",
+        "redistribution_status",
+    }:
         raise DependencyClosureError("project fields are incomplete or unknown")
     for f in ("id", "display_name", "license_spdx", "license_status"):
         _non_placeholder(project[f], f, "project") if f != "license_spdx" else _validate_license(project[f], "project")
@@ -175,6 +200,12 @@ def validate_lock(lock: Mapping[str, Any], *, public: bool = False, audience: st
         raise DependencyClosureError("project.id is invalid")
     if project["public_distribution"] is not False:
         raise DependencyClosureError("project.public_distribution must remain false for this source-only lane")
+    for field in ("redistribution_status", "notice_status", "approval_status"):
+        _status_text(project[field], field, "project")
+    if project["notice_required"] is not None and not isinstance(project["notice_required"], bool):
+        raise DependencyClosureError("project.notice_required must be boolean or null")
+    if project["approval_authority"] is not None:
+        _non_placeholder(project["approval_authority"], "approval_authority", "project")
     policy = lock["policy"]
     if not isinstance(policy, Mapping) or set(policy) != {"allowed_audiences", "public_bundle_requires_approval", "source_only"}:
         raise DependencyClosureError("policy fields are incomplete or unknown")
@@ -209,6 +240,12 @@ def validate_lock(lock: Mapping[str, Any], *, public: bool = False, audience: st
         raise DependencyClosureError("project-source must be the exact source-only build-time component")
     if project_source["license_spdx"] != project["license_spdx"] or project_source["license_status"] != project["license_status"]:
         raise DependencyClosureError("project-source license facts must match project facts")
+    for field in (
+        "redistribution_status", "notice_required", "notice_status", "approval_status",
+        "approval_authority",
+    ):
+        if project_source[field] != project[field]:
+            raise DependencyClosureError(f"project-source {field} must match project facts")
     result = json.loads(json.dumps(lock, ensure_ascii=False))
     result["components"] = checked
     if public:
@@ -226,6 +263,8 @@ def validate_public_bundle(lock: Mapping[str, Any], *, audience: str | None = "P
         raise DependencyClosureError("public distribution is explicitly blocked by the lock")
     if str(project["license_spdx"]).upper() in {"NOASSERTION", "UNKNOWN"} or str(project["license_status"]).upper() not in _EXTERNAL_APPROVED:
         raise DependencyClosureError("project source license is not approved for public distribution")
+    if str(project["redistribution_status"]).upper() not in _EXTERNAL_APPROVED or str(project["approval_status"]).upper() not in _EXTERNAL_APPROVED:
+        raise DependencyClosureError("project source redistribution authority is not approved")
     if audience not in checked["policy"]["allowed_audiences"]:
         raise DependencyClosureError(f"audience {audience} is not permitted by the dependency closure policy")
     if checked["policy"]["source_only"]:
@@ -242,6 +281,8 @@ def validate_public_bundle(lock: Mapping[str, Any], *, audience: str | None = "P
             raise DependencyClosureError(f"{cid}: model/tokenizer/codec/checkpoint/runtime/native/voice components are forbidden in a public bundle")
         if status not in _EXTERNAL_APPROVED:
             raise DependencyClosureError(f"{cid}: license status {status or 'MISSING'} is not approved")
+        if str(component["redistribution_status"]).upper() not in _EXTERNAL_APPROVED or str(component["approval_status"]).upper() not in _EXTERNAL_APPROVED:
+            raise DependencyClosureError(f"{cid}: redistribution authority is not approved")
         if not component["bundle"]:
             # An unbundled dependency may be documented in a source project,
             # but it cannot be part of a claim that the public closure is exact.

@@ -1,4 +1,5 @@
 import io
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -81,6 +82,32 @@ class PublicSurfaceScanTests(unittest.TestCase):
         findings = scan_archive(archive, self.allowlist)
         self.assertTrue(any(item["code"] == "missing_required_disclosure" for item in findings))
 
+    def test_existing_disclosure_is_checked_after_the_complete_walk(self):
+        (self.root / "src" / "safe.py").write_text("safe\n", encoding="utf-8")
+        report = scan_public_surface(self.root, self.allowlist)
+        self.assertFalse(
+            any(item["code"] == "missing_required_disclosure" for item in report["findings"])
+        )
+
+    def test_archive_duplicate_case_alias_and_special_member_fail(self):
+        duplicate = self.root / "duplicate.zip"
+        with zipfile.ZipFile(duplicate, "w") as zf:
+            zf.writestr("docs/NOTICE.md", b"notice")
+            zf.writestr("src/a.py", b"one")
+            zf.writestr("src/A.py", b"two")
+        findings = scan_archive(duplicate, self.allowlist)
+        self.assertTrue(any(item["code"] == "archive_duplicate" for item in findings))
+
+        special = self.root / "special.zip"
+        with zipfile.ZipFile(special, "w") as zf:
+            zf.writestr("docs/NOTICE.md", b"notice")
+            info = zipfile.ZipInfo("src/fifo.py")
+            info.create_system = 3
+            info.external_attr = (stat.S_IFIFO | 0o600) << 16
+            zf.writestr(info, b"payload")
+        findings = scan_archive(special, self.allowlist)
+        self.assertTrue(any(item["code"] == "archive_link" for item in findings))
+
     def test_git_only_ignores_untracked_private_worktree_file(self):
         (self.root / "private.txt").write_text("untracked private\n", encoding="utf-8")
         with patch("tools.scan_public_surface._scan_git", return_value=[]):
@@ -100,6 +127,23 @@ class PublicSurfaceScanTests(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.root), "commit", "-m", "leak " + private_path], check=True, capture_output=True)
         report = scan_public_surface(self.root, self.allowlist, scan_worktree=False, git_history=True)
         self.assertTrue(any(item["code"] == "local_path" and "commit-metadata" in item["path"] for item in report["findings"]))
+
+    def test_current_required_disclosures_are_not_retroactive_history_requirements(self):
+        try:
+            subprocess.run(["git", "init", "-b", "main", str(self.root)], check=True, capture_output=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            self.skipTest("Git unavailable")
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Test"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "test@invalid"], check=True, capture_output=True)
+        (self.root / "src" / "safe.py").write_text("safe\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "src/safe.py"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "source before disclosure"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "docs/NOTICE.md"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-m", "add required disclosure"], check=True, capture_output=True)
+        report = scan_public_surface(self.root, self.allowlist, scan_worktree=False, git_history=True)
+        self.assertFalse(
+            any(item["code"] == "missing_required_disclosure" for item in report["findings"])
+        )
 
     def test_binary_ascii_and_utf16_strings_are_scanned(self):
         windows_path = bytes([67, 58, 92]) + b"Users" + bytes([92]) + b"tester" + bytes([92]) + b"secret.txt"
@@ -137,6 +181,54 @@ class PublicSurfaceScanTests(unittest.TestCase):
             info.size = len(payload)
             tf.addfile(info, io.BytesIO(payload))
         self.assertIsInstance(scan_archive(tar_path, self.allowlist), list)
+
+    def test_pink_guard_classifies_four_leak_modes_without_echoing_rules(self):
+        literal = "-".join(("retired", "surface", "marker"))
+        semantic = "superseded" + " identity"
+        rationale = "renamed" + " because of earlier feedback"
+        attention = "do not" + " mention the former label"
+        payload = "\n".join((literal, semantic, rationale, attention))
+        (self.root / "src" / "leak.py").write_text(payload, encoding="utf-8")
+        policy = {
+            "pink_rejected_literals": [literal],
+            "pink_semantic_regexes": [r"superseded\s+identity"],
+            "pink_rationale_regexes": [r"renamed\s+because"],
+            "pink_attention_regexes": [r"do\s+not\s+mention\s+the\s+former"],
+            "pink_visible_exception_paths": ["docs/NOTICE.md"],
+        }
+        report = scan_public_surface(self.root, self.allowlist, private_policy=policy)
+        codes = {item["code"] for item in report["findings"]}
+        self.assertTrue(
+            {
+                "pink_literal_leak",
+                "pink_semantic_leak",
+                "pink_rationale_leak",
+                "pink_attention_leak",
+            }.issubset(codes)
+        )
+        rendered = repr(report["findings"])
+        self.assertNotIn(literal, rendered)
+        self.assertNotIn(r"superseded\s+identity", rendered)
+
+    def test_pink_guard_exception_is_path_scoped_and_does_not_hide_credentials(self):
+        literal = "".join(("controlled", "-", "disclosure"))
+        credential = "".join(("api", "_key", "=", "synthetic-value"))
+        (self.root / "docs" / "NOTICE.md").write_text(literal + "\n" + credential, encoding="utf-8")
+        (self.root / "src" / "safe.py").write_text(literal, encoding="utf-8")
+        policy = {
+            "pink_rejected_literals": [literal],
+            "pink_visible_exception_paths": ["docs/NOTICE.md"],
+        }
+        report = scan_public_surface(self.root, self.allowlist, private_policy=policy)
+        self.assertTrue(
+            any(item["code"] == "pink_literal_leak" and item["path"] == "src/safe.py" for item in report["findings"])
+        )
+        self.assertFalse(
+            any(item["code"] == "pink_literal_leak" and item["path"] == "docs/NOTICE.md" for item in report["findings"])
+        )
+        self.assertTrue(
+            any(item["code"] == "credential_like" and item["path"] == "docs/NOTICE.md" for item in report["findings"])
+        )
 
     def test_unsupported_archive_fails_closed(self):
         bad = self.root / "candidate.rar"

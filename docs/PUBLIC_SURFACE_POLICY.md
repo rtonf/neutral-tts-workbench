@@ -19,12 +19,20 @@ The public surface is assembled only from these positive classes:
 No binary asset class is currently permitted. The public asset allowlist is
 therefore empty.
 
+Public text and metadata are authored only from this positive target state.
+The private scan policy supplies literal, semantic, rationale, and attention
+checks without placing their rule values in the public tree. Those checks run
+against source, UI/CLI strings, samples, SBOMs, the candidate tree, reachable
+Git history, and every archive in scope.
+
 ## Required disclosure exceptions
 
 Exact third-party names, license identifiers, copyright notices, compatibility
 statements, and unresolved redistribution statuses may appear in the public
 license matrix, third-party notices, and release-status document. These are
 required disclosures and are not privacy exceptions for any other path.
+They also do not suppress credential, local-path, user-data, or unrelated
+surface checks.
 
 ## Fail-closed rule
 

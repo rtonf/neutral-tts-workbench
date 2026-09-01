@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import unicodedata
 import zipfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -56,6 +57,10 @@ _DENY_DIRS = {
     "native", "site-packages", "build", "dist", "bin", "lib", "temp", "tmp",
 }
 _ARCHIVE_EXTENSIONS = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz")
+_MAX_ARCHIVE_ENTRIES = 10_000
+_MAX_ARCHIVE_MEMBER_BYTES = 64 * 1024 * 1024
+_MAX_ARCHIVE_EXPANDED_BYTES = 256 * 1024 * 1024
+_MAX_ARCHIVE_COMPRESSION_RATIO = 200
 
 
 def _finding(code: str, path: str, detail: str = "", **extra: Any) -> dict[str, Any]:
@@ -96,6 +101,37 @@ def _private_rules(policy: dict[str, Any]) -> tuple[list[str], list[re.Pattern[s
         regexes.extend(b)
         disclosures.extend(c)
     return literals, regexes, disclosures
+
+
+def _compile_policy_regexes(policy: dict[str, Any], keys: tuple[str, ...]) -> list[re.Pattern[str]]:
+    result: list[re.Pattern[str]] = []
+    for value in _policy_values(policy, keys):
+        try:
+            result.append(re.compile(value))
+        except re.error as exc:
+            raise ScanError(f"invalid private policy regex: {exc}") from exc
+    return result
+
+
+def _pink_rules(
+    policy: dict[str, Any],
+) -> tuple[list[str], list[re.Pattern[str]], list[re.Pattern[str]], list[re.Pattern[str]], list[str]]:
+    """Load rejected-state leak rules without embedding their values in code."""
+
+    literals = _policy_values(policy, ("pink_rejected_literals",))
+    semantic = _compile_policy_regexes(policy, ("pink_semantic_regexes",))
+    rationale = _compile_policy_regexes(policy, ("pink_rationale_regexes",))
+    attention = _compile_policy_regexes(policy, ("pink_attention_regexes",))
+    exceptions = _policy_values(policy, ("pink_visible_exception_paths",))
+    nested = policy.get("private_scan_policy")
+    if isinstance(nested, dict):
+        a, b, c, d, e = _pink_rules(nested)
+        literals.extend(a)
+        semantic.extend(b)
+        rationale.extend(c)
+        attention.extend(d)
+        exceptions.extend(e)
+    return literals, semantic, rationale, attention, exceptions
 
 
 def _disclosure_paths(policy: dict[str, Any]) -> list[str]:
@@ -161,10 +197,16 @@ def _decode_strings(data: bytes) -> list[tuple[str, str]]:
 
 def _content_findings(path: str, data: bytes, policy: dict[str, Any], *, binary: bool = False, logical_path: str | None = None) -> list[dict[str, Any]]:
     literals, regexes, disclosures = _private_rules(policy)
+    pink_literals, pink_semantic, pink_rationale, pink_attention, pink_exceptions = _pink_rules(policy)
     # Labels such as archive.zip!docs/NOTICE.md and git:<commit>:docs/NOTICE.md
     # are useful diagnostics, but disclosure policy is always based on the
     # logical relative path inside the candidate tree/member.
     disclosure = _is_disclosure(logical_path or path, policy)
+    pink_path = (logical_path or path).replace(_BACKSLASH, "/")
+    pink_exception = any(
+        fnmatch.fnmatchcase(pink_path, candidate.replace(_BACKSLASH, "/"))
+        for candidate in pink_exceptions
+    )
     # Binary strings are checked as strings too.  For text, strict UTF-8 gives
     # readable diagnostics; undecodable content is still inspected via strings.
     text = data.decode("utf-8", "replace")
@@ -179,13 +221,23 @@ def _content_findings(path: str, data: bytes, policy: dict[str, Any], *, binary:
             findings.append(_finding("credential_like", path, "credential-like assignment in content", encoding=kind))
         for literal in literals:
             if literal and literal in value:
-                findings.append(_finding("private_literal", path, "private-policy literal matched", value=literal, encoding=kind))
+                findings.append(_finding("private_literal", path, "private-policy literal matched", encoding=kind))
         for expression in regexes:
             if expression.search(value):
-                findings.append(_finding("private_regex", path, "private-policy regex matched", pattern=expression.pattern, encoding=kind))
+                findings.append(_finding("private_regex", path, "private-policy regex matched", encoding=kind))
         for name in disclosures:
             if name and name in value and not disclosure:
                 findings.append(_finding("disclosure_scope", path, "third-party disclosure name outside disclosure path", value=name, encoding=kind))
+        if not pink_exception:
+            if any(literal and literal in value for literal in pink_literals):
+                findings.append(_finding("pink_literal_leak", path, "rejected-state literal matched", encoding=kind))
+            for code, expressions in (
+                ("pink_semantic_leak", pink_semantic),
+                ("pink_rationale_leak", pink_rationale),
+                ("pink_attention_leak", pink_attention),
+            ):
+                if any(expression.search(value) for expression in expressions):
+                    findings.append(_finding(code, path, "rejected-state relation matched", encoding=kind))
     return findings
 
 
@@ -237,41 +289,78 @@ def scan_archive(path: os.PathLike[str] | str, policy: dict[str, Any]) -> list[d
     label = str(archive)
     findings: list[dict[str, Any]] = []
     seen: set[str] = set()
+    identities: set[str] = set()
+    expanded = 0
     low = archive.name.lower()
     try:
         if low.endswith(".zip"):
             with zipfile.ZipFile(archive) as zf:
-                for info in zf.infolist():
+                infos = zf.infolist()
+                if len(infos) > _MAX_ARCHIVE_ENTRIES:
+                    raise ScanError("archive entry count exceeds the scanner limit")
+                for info in infos:
                     if info.is_dir():
                         continue
-                    mode = (info.external_attr >> 16) & 0o170000
-                    if mode == stat.S_IFLNK:
-                        findings.append(_finding("archive_link", f"{label}!{info.filename}", "archive symlink is forbidden"))
+                    mode = stat.S_IFMT((info.external_attr >> 16) & 0xFFFF)
+                    if mode not in {0, stat.S_IFREG}:
+                        findings.append(_finding("archive_link", f"{label}!{info.filename}", "archive links and special members are forbidden"))
                         continue
+                    if info.file_size > _MAX_ARCHIVE_MEMBER_BYTES:
+                        raise ScanError("archive member exceeds the expanded-size limit")
+                    if (
+                        (info.compress_size == 0 and info.file_size > 0)
+                        or info.file_size > max(info.compress_size, 1) * _MAX_ARCHIVE_COMPRESSION_RATIO
+                    ):
+                        raise ScanError("archive member exceeds the compression-ratio limit")
+                    expanded += info.file_size
+                    if expanded > _MAX_ARCHIVE_EXPANDED_BYTES:
+                        raise ScanError("archive expanded size exceeds the scanner limit")
+                    try:
+                        normalized = _norm_rel(info.filename.replace(_BACKSLASH, "/"))
+                    except ValueError:
+                        normalized = None
+                    if normalized is not None:
+                        identity = unicodedata.normalize("NFC", normalized).casefold()
+                        if normalized in seen or identity in identities:
+                            findings.append(_finding("archive_duplicate", f"{label}!{normalized}", "duplicate or Unicode/case-colliding archive member"))
+                            continue
+                        seen.add(normalized)
+                        identities.add(identity)
                     try:
                         data = zf.read(info)
                     except (OSError, RuntimeError, zipfile.BadZipFile, KeyError) as exc:
                         raise ScanError(f"unreadable archive member {info.filename}: {exc}") from exc
-                    try:
-                        seen.add(_norm_rel(info.filename.replace(_BACKSLASH, "/")))
-                    except ValueError:
-                        pass
                     _scan_archive_member(info.filename, data, policy, findings, label)
         elif low.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz")):
             with tarfile.open(archive, mode="r:*") as tf:
-                for info in tf.getmembers():
+                infos = tf.getmembers()
+                if len(infos) > _MAX_ARCHIVE_ENTRIES:
+                    raise ScanError("archive entry count exceeds the scanner limit")
+                for info in infos:
                     if info.isdir():
                         continue
                     if info.issym() or info.islnk() or not info.isfile():
                         findings.append(_finding("archive_link", f"{label}!{info.name}", "archive links and special members are forbidden"))
                         continue
+                    if info.size > _MAX_ARCHIVE_MEMBER_BYTES:
+                        raise ScanError("archive member exceeds the expanded-size limit")
+                    expanded += info.size
+                    if expanded > _MAX_ARCHIVE_EXPANDED_BYTES:
+                        raise ScanError("archive expanded size exceeds the scanner limit")
+                    try:
+                        normalized = _norm_rel(info.name.replace(_BACKSLASH, "/"))
+                    except ValueError:
+                        normalized = None
+                    if normalized is not None:
+                        identity = unicodedata.normalize("NFC", normalized).casefold()
+                        if normalized in seen or identity in identities:
+                            findings.append(_finding("archive_duplicate", f"{label}!{normalized}", "duplicate or Unicode/case-colliding archive member"))
+                            continue
+                        seen.add(normalized)
+                        identities.add(identity)
                     extracted = tf.extractfile(info)
                     if extracted is None:
                         raise ScanError(f"unreadable archive member {info.name}")
-                    try:
-                        seen.add(_norm_rel(info.name.replace(_BACKSLASH, "/")))
-                    except ValueError:
-                        pass
                     _scan_archive_member(info.name, extracted.read(), policy, findings, label)
         else:
             raise ScanError(f"unsupported archive format: {archive}")
@@ -300,7 +389,7 @@ def _scan_git(root: Path, policy: dict[str, Any], commit: str | None, history: b
     commit_id = verified.stdout.decode("ascii", "strict").strip()
     findings: list[dict[str, Any]] = []
 
-    def scan_commit(commit_hash: str) -> None:
+    def scan_commit(commit_hash: str, *, require_current_disclosures: bool) -> None:
         commit_object = _git("cat-file", "commit", commit_hash, cwd=root).stdout
         findings.extend(
             _content_findings(
@@ -333,13 +422,18 @@ def _scan_git(root: Path, policy: dict[str, Any], commit: str | None, history: b
             findings.extend(_check_path_policy(rel, policy))
             shown = _git("show", f"{commit_hash}:{rel}", cwd=root).stdout
             findings.extend(_content_findings(f"git:{commit_hash}:{rel}", shown, policy, binary=(b"\x00" in shown), logical_path=rel))
-        findings.extend(_missing_disclosure_findings(seen, policy, f"git:{commit_hash}"))
+        # Current disclosure requirements are candidate-tree gates.  Reachable
+        # history is still scanned for forbidden paths/content, but a policy
+        # file introduced today cannot make an older tree retroactively omit a
+        # file that did not yet exist.
+        if require_current_disclosures:
+            findings.extend(_missing_disclosure_findings(seen, policy, f"git:{commit_hash}"))
 
-    scan_commit(commit_id)
+    scan_commit(commit_id, require_current_disclosures=True)
     if history:
         commits = _git("rev-list", commit_id, cwd=root).stdout.decode("ascii", "strict").splitlines()
         for old_commit in commits[1:]:
-            scan_commit(old_commit)
+            scan_commit(old_commit, require_current_disclosures=False)
     return findings
 
 
@@ -429,7 +523,7 @@ def scan_public_surface(
             binary = b"\x00" in data or not _looks_text(data)
             findings.extend(_content_findings(rel, data, policy, binary=binary))
             visited.add(candidate)
-        findings.extend(_missing_disclosure_findings(worktree_seen, policy, ""))
+      findings.extend(_missing_disclosure_findings(worktree_seen, policy, ""))
     if archives:
         for archive in archives:
             findings.extend(scan_archive(archive, policy))

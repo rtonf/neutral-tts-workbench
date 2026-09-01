@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:upgrade-rollback:v1",
+  "title": "Source-only upgrade and rollback contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_layout_required",
+    "owned_files_manifest_required",
+    "fresh_staging_required",
+    "no_follow_guarded_staging_required",
+    "durable_phase_journal_required",
+    "startup_reconciliation_required",
+    "overwrite_existing_root",
+    "retain_prior_complete_layout",
+    "automatic_rollback_on_failure",
+    "rollback_overwrites_current",
+    "implicit_user_data_migration",
+    "implicit_user_data_delete"
+  ],
+  "properties": {
+    "schema_version": {"const": "neutral-upgrade-rollback-contract-v1"},
+    "source_layout_required": {"const": true},
+    "owned_files_manifest_required": {"const": true},
+    "fresh_staging_required": {"const": true},
+    "no_follow_guarded_staging_required": {"const": true},
+    "durable_phase_journal_required": {"const": true},
+    "startup_reconciliation_required": {"const": true},
+    "overwrite_existing_root": {"const": false},
+    "retain_prior_complete_layout": {"const": true},
+    "automatic_rollback_on_failure": {"const": true},
+    "rollback_overwrites_current": {"const": false},
+    "implicit_user_data_migration": {"const": false},
+    "implicit_user_data_delete": {"const": false}
+  }
+}

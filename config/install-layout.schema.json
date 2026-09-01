@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:install-layout:v1",
+  "title": "Source-only install layout manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "verification_scope",
+    "source",
+    "layout",
+    "files",
+    "file_count",
+    "total_bytes",
+    "files_sha256",
+    "external_payloads"
+  ],
+  "properties": {
+    "schema_version": {"const": "neutral-install-layout-v1"},
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,94}[a-z0-9])?$"
+    },
+    "verification_scope": {"const": "DEMO_SOURCE_ONLY"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app_root_name",
+        "manifest_path",
+        "single_app_root",
+        "user_data_external",
+        "implicit_user_data_delete"
+      ],
+      "properties": {
+        "app_root_name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "manifest_path": {"const": "OWNED_FILES.json"},
+        "single_app_root": {"const": true},
+        "user_data_external": {"const": true},
+        "implicit_user_data_delete": {"const": false}
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "role", "sha256", "size"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9_. -]+(?:/[A-Za-z0-9_. -]+)*$"
+          },
+          "role": {
+            "enum": ["source", "configuration", "documentation", "metadata"]
+          },
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "size": {"type": "integer", "minimum": 0, "maximum": 67108864}
+        }
+      }
+    },
+    "file_count": {"type": "integer", "minimum": 1, "maximum": 4096},
+    "total_bytes": {"type": "integer", "minimum": 0, "maximum": 268435456},
+    "files_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "external_payloads": {"type": "array", "maxItems": 0}
+  }
+}

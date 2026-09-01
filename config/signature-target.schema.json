@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:signature-target:v1",
+  "title": "Unsigned signature target",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_format",
+    "payload_sha256",
+    "signature_status",
+    "signature_algorithm",
+    "signature",
+    "certificate_identity"
+  ],
+  "properties": {
+    "schema_version": {"const": "neutral-signature-target-v1"},
+    "target_format": {"const": "CANONICAL_JSON_SHA256"},
+    "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "signature_status": {"const": "UNSIGNED"},
+    "signature_algorithm": {"type": "null"},
+    "signature": {"type": "null"},
+    "certificate_identity": {"type": "null"}
+  }
+}

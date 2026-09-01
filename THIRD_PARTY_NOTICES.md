@@ -26,6 +26,11 @@ source, complete license text, copyright notice, required notices, content
 hashes, dependency closure, and written redistribution decision. Generate the
 SBOM and manifest from the exact candidate, not from this prose list.
 
+The public license matrix records exact known values and explicit nulls for
+version, source, artifact hash, license, redistribution, notice, approval, and
+authority fields. A null or pending value is a blocker, not permission inferred
+from a component name or compatibility target.
+
 The machine-checked decision source is
 `config/dependency-closure.lock.json`. Unknown URLs, versions, hashes, or rights
 stay explicit and fail closed. For a local internal source-review archive,

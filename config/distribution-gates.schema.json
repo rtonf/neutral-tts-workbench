@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:distribution-gates:v1",
+  "title": "Independent distribution decision gates",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_decision", "decision_authority", "gates"],
+  "properties": {
+    "schema_version": {"const": "neutral-distribution-gates-v1"},
+    "release_decision": {"const": "NO_GO_PUBLIC_BINARY"},
+    "decision_authority": {"type": "null"},
+    "gates": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gate_id", "status", "payload_present", "required_evidence",
+          "approval_authority", "approval_record"
+        ],
+        "properties": {
+          "gate_id": {
+            "enum": [
+              "source_license", "model", "tokenizer", "codec", "native_runtime",
+              "playback", "installer", "signing"
+            ]
+          },
+          "status": {
+            "enum": [
+              "BLOCKED_PENDING_AUTHORITY_DECISION", "NOT_APPROVED", "NOT_REVIEWED",
+              "CONTRACT_ONLY_NO_ARTIFACT", "UNSIGNED"
+            ]
+          },
+          "payload_present": {"type": "boolean"},
+          "required_evidence": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "approval_authority": {"type": "null"},
+          "approval_record": {"type": "null"}
+        }
+      }
+    }
+  }
+}

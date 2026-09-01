@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:clean-windows-acceptance:v1",
+  "title": "Pending clean physical offline Windows acceptance template",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "candidate_id", "environment", "checks", "overall_status"],
+  "properties": {
+    "schema_version": {"const": "neutral-clean-windows-acceptance-v1"},
+    "candidate_id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,94}[a-z0-9])?$"},
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "physical_device_required",
+        "clean_snapshot_required",
+        "offline_required",
+        "bundled_runtime_expected"
+      ],
+      "properties": {
+        "physical_device_required": {"const": true},
+        "clean_snapshot_required": {"const": true},
+        "offline_required": {"const": true},
+        "bundled_runtime_expected": {"const": false}
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "evidence_sha256"],
+        "properties": {
+          "name": {
+            "enum": [
+              "demo_workflow",
+              "no_external_payload",
+              "test_layout_integrity",
+              "uninstall_owned_only",
+              "upgrade_rollback",
+              "user_data_preserved"
+            ]
+          },
+          "status": {"const": "PENDING"},
+          "evidence_sha256": {"type": "null"}
+        }
+      }
+    },
+    "overall_status": {"const": "PENDING"}
+  }
+}

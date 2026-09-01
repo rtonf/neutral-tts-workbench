@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:neutral-tts:schema:release-candidate:v1",
+  "title": "Unsigned internal source release candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "audience",
+    "release_decision",
+    "source",
+    "artifacts",
+    "provenance",
+    "upgrade_rollback",
+    "clean_windows_acceptance",
+    "signature_target"
+  ],
+  "properties": {
+    "schema_version": {"const": "neutral-release-candidate-v1"},
+    "candidate_id": {"type": "string", "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,94}[a-z0-9])?$"},
+    "audience": {"const": "INTERNAL_SOURCE_REVIEW"},
+    "release_decision": {"const": "NO_GO_PUBLIC_BINARY"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dependency_lock_sha256",
+        "install_layout_manifest_sha256",
+        "sbom_cyclonedx_sha256",
+        "sbom_spdx_sha256",
+        "source_archive_sha256"
+      ],
+      "properties": {
+        "dependency_lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "install_layout_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sbom_cyclonedx_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sbom_spdx_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "provenance": {"$ref": "provenance.schema.json"},
+    "upgrade_rollback": {"$ref": "upgrade-rollback.schema.json"},
+    "clean_windows_acceptance": {"$ref": "clean-windows-acceptance.schema.json"},
+    "signature_target": {"$ref": "signature-target.schema.json"}
+  }
+}

@@ -26,9 +26,11 @@ Current blockers include:
   platform binaries require a strict dependency closure, SBOM, and notices;
 - an alternative voice requires documented identity/consent and redistribution
   rights, and no private or previously accepted voice asset may be substituted;
-- signed manifests, a single signed launcher/installer, backup/restore,
-  crash/cancel recovery, clean physical-offline Windows beta evidence, and final
-  security/legal/human acceptance are absent.
+- signature execution, a signed launcher/installer, clean physical-offline
+  Windows beta evidence, and final security/legal/human acceptance are absent;
+- recovery, backup/restore, and source-only lifecycle contracts now have
+  synthetic tests, but they are not clean-device, installer, signing, or human
+  acceptance evidence.
 
 Therefore do not create or publish an installer, release archive, GitHub
 repository/release, model/runtime bundle, or Production claim from this lane.
@@ -40,3 +42,8 @@ tree plus generated source metadata, and does not satisfy any open license,
 redistribution, binary, installer, signing, clean-device, or human-acceptance
 gate. The builder and verifier reject a public audience while these gates are
 open.
+
+`compliance/distribution-gates.public.json` keeps model, tokenizer, codec,
+native-runtime, playback, installer, and signing decisions separate. A passed
+gate requires its own exact evidence and approval authority; progress on one
+does not approve another.
