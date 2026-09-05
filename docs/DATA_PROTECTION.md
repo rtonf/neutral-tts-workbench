@@ -18,7 +18,11 @@ the backend or creating a second publication.
 
 Generation startup uses the configured recovery root. Restore startup uses an
 explicit live-data root, and install lifecycle startup uses an explicit
-application/user-data root pair. Roots are never discovered or swept.
+application/user-data root pair. All configured operational roots must be
+physically distinct and non-nested; alternate path spellings do not bypass this
+boundary. Preview and admission bind their physical identities so replacement
+between approval and execution fails closed. Roots are never discovered or
+swept.
 
 A backup is a versioned ZIP with a manifest and SHA-256 hash for every file. It
 covers settings, history, dictionary data, and approved generic voice-profile

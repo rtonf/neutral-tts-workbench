@@ -519,6 +519,20 @@ class RecoveryManager:
             raise RecoveryError("recovery and output roots are incompatible") from exc
         if common in {recovery_key, output_key}:
             raise RecoveryError("recovery and output roots must be separate")
+        try:
+            with DirectoryGuard(self.recovery_directory) as recovery_guard, DirectoryGuard(
+                self.output_directory
+            ) as output_guard:
+                if (
+                    recovery_guard.identity == output_guard.identity
+                    or recovery_guard.contains_final(output_guard.final_path)
+                    or output_guard.contains_final(recovery_guard.final_path)
+                ):
+                    raise RecoveryError(
+                        "recovery and output roots must be physically separate"
+                    )
+        except FilesystemBoundaryError as exc:
+            raise RecoveryError("recovery root identity is unavailable") from exc
         self.journal_directory = self.recovery_directory / "journals"
         self.staging_root = self.recovery_directory / "staging"
         self.quarantine_directory = self.recovery_directory / "quarantine"

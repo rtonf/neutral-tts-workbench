@@ -368,6 +368,28 @@ class ResilienceTests(unittest.TestCase):
             with self.assertRaises(RecoveryError):
                 RecoveryManager(root / "state", root / "state" / "output")
 
+    @unittest.skipUnless(os.name == "nt", "Windows filesystem alias check")
+    def test_physical_root_alias_is_rejected(self) -> None:
+        import ctypes
+
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).absolute()
+            required = ctypes.windll.kernel32.GetShortPathNameW(str(root), None, 0)
+            if required <= 0:
+                self.skipTest("short path aliases unavailable")
+            buffer = ctypes.create_unicode_buffer(required + 1)
+            written = ctypes.windll.kernel32.GetShortPathNameW(
+                str(root), buffer, len(buffer)
+            )
+            if written <= 0:
+                self.skipTest("short path aliases unavailable")
+            alias = Path(buffer.value)
+            if os.path.normcase(str(alias)) == os.path.normcase(str(root)):
+                self.skipTest("distinct short path alias unavailable")
+
+            with self.assertRaises(RecoveryError):
+                RecoveryManager(root, alias)
+
     @unittest.skipUnless(os.name == "nt", "junction probe is Windows-specific")
     def test_recovery_child_junction_and_replaced_output_root_fail_closed(self) -> None:
         def junction(link: Path, target: Path) -> None:

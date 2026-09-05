@@ -14,8 +14,9 @@ The workflow is:
    root pair are optional and are used only when explicitly configured.
 2. Call `preview(source_text)`. The service builds one deterministic text plan,
    estimate, rendered filename, and collision-resolved candidate. This method
-   only reads settings and the configured output directory. It does not create
-   recovery state, reconcile a root, or invoke a backend.
+   only reads settings, configured root identities, and the output directory's
+   collision view. It does not create recovery state, reconcile a root, or
+   invoke a backend.
 3. Display only `ApplicationPreview.public_payload()`. It contains hashes,
    counts, ranges, and a sanitized filename, but no raw source/synthesis text or
    filesystem path.
@@ -23,7 +24,10 @@ The workflow is:
    exposes the same validation boundary for hosts that need to inspect an
    admission before execution. Admission recomputes the plan and estimate,
    verifies every digest and settings binding, and rejects source, settings,
-   tokenizer, calibration, directory, or filename collision drift.
+   tokenizer, calibration, physical directory identity, root overlap, or
+   filename collision drift. Output, recovery, restore, and install roots must
+   be physically separate even when different path spellings identify the same
+   directory.
 5. `run()` takes a nonblocking operating-system owner claim for the configured
    generation recovery root. While holding that claim, it reconciles generation
    journals and the explicitly configured restore/install roots. The claim
@@ -36,10 +40,12 @@ The workflow is:
    returns `BackendResult` plus `ActualRun` facts. The request necessarily holds
    the raw plan for an eventual approved adapter; it is internal-only and must
    never be serialized or logged.
-7. Before the durable `ready` transition, the service checks the staged artifact is stable mono
-   PCM16 WAV data and verifies its sample rate, duration, and byte count against
-   the backend's actual facts. It also constructs the strict receipt, which
-   rejects plan-count drift.
+7. Before the durable `ready` transition, the service checks the staged artifact
+   is stable mono PCM16 WAV data. The RIFF extent and every chunk extent must fit
+   the exact file, the data extent must be non-empty and frame-aligned, and the
+   sample rate must be no greater than 768,000 Hz. It verifies sample rate,
+   duration, and byte count against the backend's actual facts and constructs
+   the strict receipt, which rejects plan-count drift.
 8. Publication is the final side effect: a same-filesystem hard link with
    atomic no-replace semantics into the exact output name bound at admission.
    A newly occupied name rejects the run instead of selecting another suffix
@@ -61,9 +67,11 @@ failed, cancelled, malformed, and orphan run state is moved to quarantine.
 `DEMO_SILENCE_ONLY` is the only supplied backend. It creates a valid 100 ms,
 16 kHz, mono PCM16 WAV containing silence. It does not synthesize speech and it
 does not import a model, tokenizer asset, sampler, GPU library, audio runtime,
-or native dependency. All CLI output labels it as `DEMO_SILENCE_ONLY`,
-`speech: false`, and `audio_kind: silence`; a successful demo must not be
-reported as real TTS generation.
+or native dependency. Only the exact supplied adapter receives the demo label,
+and the application verifies that its complete PCM payload is zero-valued before
+publication. Its CLI output says `DEMO_SILENCE_ONLY`, `speech: false`, and
+`audio_kind: silence`; a caller-controlled backend identity alone cannot obtain
+that label. A successful demo must not be reported as real TTS generation.
 
 The built-in demo tokenizer is also synthetic: it counts one token per Unicode
 code point and is identified as `demo-tokenizer-v1`. It is not evidence that an

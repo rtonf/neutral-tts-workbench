@@ -28,8 +28,11 @@ not accept an arbitrary destination path or a legacy two-argument form. The
 current standard-library implementation publishes only by a same-filesystem
 hard link; it fails closed rather than exposing a partial copy or cleanup race.
 Before linking, the staged file must parse as a stable, non-empty mono PCM16
-RIFF/WAVE stream with a bounded positive sample rate. A regular file with only
-a WAV-looking name is not a valid staged output.
+RIFF/WAVE stream. Its declared RIFF length and every padded chunk extent must
+match the bounded physical file, its data extent must be positive and
+frame-aligned, and its sample rate must be in the supported range through
+768,000 Hz. A regular file with only a WAV-looking name, a truncated declared
+extent, or an out-of-contract sample rate is not a valid staged output.
 
 ## Shared pre-generation plan
 
@@ -99,15 +102,18 @@ forged receipt-like dictionaries are rejected rather than used as history.
 `ApplicationService` is the framework-neutral boundary between persisted
 settings, preview, backend authorization, safe publication, and receipt
 feedback. Admission recomputes the pure preview and binds source/settings,
-plan, estimate, collision-resolved filename, output-directory identity, and
-generation-recovery-root identity. Any drift rejects the request before backend use.
+plan, estimate, collision-resolved filename, and the physical identities of all
+configured operational roots. Different path spellings, including filesystem
+aliases, cannot make output, recovery, restore, or install roots equal or
+nested. Any drift rejects the request before backend use.
 The final collision selection must still equal the previewed candidate; it may
 not silently move to a suffix after the user approved a preview.
 
 `preview()` itself performs no startup reconciliation and creates no recovery
-files. It may read the explicitly configured output directory to select the
-collision candidate. The ordinary CLI `preview` command is also a startup
-entry: it reconciles first and then calls the pure preview method.
+files. It may read physical identities for explicitly configured roots and the
+output directory to select the collision candidate. The ordinary CLI `preview`
+command is also a startup entry: it reconciles first and then calls the pure
+preview method.
 
 The backend receives the immutable internal text plan and one fresh private
 staging pathname. Raw plan text is necessary for an eventual approved adapter,
@@ -129,8 +135,10 @@ competing ordinary startup is rejected while the owner is live.
 
 The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
 It writes silence, not speech, and its code and JSON output must always say so.
-It is not an engine implementation, tokenizer compatibility result, model
-test, audio-quality test, or Production evidence. See
+Demo labeling requires the exact supplied adapter rather than a caller-provided
+identity string, and its complete PCM payload is verified as zero-valued before
+publication. It is not an engine implementation, tokenizer compatibility
+result, model test, audio-quality test, or Production evidence. See
 `docs/APPLICATION_WORKFLOW.md` for the complete port and CLI contract.
 
 ## Recovery and backup contract

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import struct
 import tempfile
 import unittest
 import wave
@@ -13,6 +15,7 @@ from neutral_tts.application import (
     DigestMismatchError,
     PersistedSettings,
     StalePreviewError,
+    UnsafeDirectoryError,
 )
 from neutral_tts.demo_backend import DEMO_SILENCE_ONLY
 from neutral_tts.filename_templates import FilenameContext
@@ -175,6 +178,82 @@ class ApplicationServiceTests(unittest.TestCase):
                 service.run("one", preview)
             self.assertFalse(list((root / "output").iterdir()))
 
+    def test_declared_pcm_extent_must_fit_the_wav_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+
+            class TruncatedBackend(DEMO_SILENCE_ONLY):
+                def generate(self, request):
+                    result = super().generate(request)
+                    payload = bytearray(result.staged_path.read_bytes())
+                    data_offset = payload.index(b"data")
+                    declared_bytes = 1_600_000_000
+                    payload[data_offset + 4 : data_offset + 8] = struct.pack(
+                        "<I", declared_bytes
+                    )
+                    result.staged_path.write_bytes(payload)
+                    return replace(
+                        result,
+                        actual=replace(
+                            result.actual,
+                            duration_seconds=(declared_bytes // 2)
+                            / result.actual.sample_rate,
+                        ),
+                    )
+
+            service.backend = TruncatedBackend()
+            preview = service.preview("one")
+            with self.assertRaises(ApplicationError):
+                service.run("one", preview)
+            self.assertFalse(list((root / "output").iterdir()))
+
+    def test_sample_rate_must_stay_within_the_pcm_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+
+            class OversizedRateBackend(DEMO_SILENCE_ONLY):
+                def generate(self, request):
+                    result = super().generate(request)
+                    payload = bytearray(result.staged_path.read_bytes())
+                    sample_rate = 768_001
+                    payload[24:28] = struct.pack("<I", sample_rate)
+                    payload[28:32] = struct.pack("<I", sample_rate * 2)
+                    result.staged_path.write_bytes(payload)
+                    return replace(
+                        result,
+                        actual=replace(
+                            result.actual,
+                            sample_rate=sample_rate,
+                            duration_seconds=1_600 / sample_rate,
+                        ),
+                    )
+
+            service.backend = OversizedRateBackend()
+            preview = service.preview("one")
+            with self.assertRaises(ApplicationError):
+                service.run("one", preview)
+            self.assertFalse(list((root / "output").iterdir()))
+
+    def test_backend_identity_alone_does_not_grant_demo_labeling(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+
+            class IdentitySpoofBackend(DEMO_SILENCE_ONLY):
+                def generate(self, request):
+                    result = super().generate(request)
+                    with result.staged_path.open("r+b") as handle:
+                        handle.seek(44)
+                        handle.write(b"\x01\x00")
+                    return result
+
+            service.backend = IdentitySpoofBackend()
+            preview = service.preview("one")
+            outcome = service.run("one", preview)
+            self.assertNotIn("demo", outcome.public_payload())
+
     def test_count_drift_fails_before_publication_after_audio_validation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -248,6 +327,62 @@ class ApplicationServiceTests(unittest.TestCase):
             self.assertTrue(startup.restore_reconciled)
             self.assertTrue(startup.install_reconciled)
             self.assertFalse(startup.public_payload()["backend_invoked"])
+
+    def test_preview_identity_rejects_output_directory_replacement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            output = root / "output"
+            original = root / "original-output"
+            preview = service.preview("one")
+            output.rename(original)
+            output.mkdir()
+
+            with self.assertRaises(StalePreviewError):
+                service.run("one", preview)
+            self.assertFalse(list(output.iterdir()))
+
+    def test_configured_roots_must_not_overlap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            nested_restore = root / "output" / "live-data"
+            nested_restore.mkdir()
+            service._settings = replace(
+                service._settings,
+                restore_live_data_root=nested_restore,
+            )
+
+            with self.assertRaises(UnsafeDirectoryError):
+                service.preview("one")
+
+    @unittest.skipUnless(os.name == "nt", "Windows filesystem alias check")
+    def test_physical_alias_cannot_make_output_and_recovery_the_same_root(self):
+        import ctypes
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).absolute()
+            required = ctypes.windll.kernel32.GetShortPathNameW(str(root), None, 0)
+            if required <= 0:
+                self.skipTest("short path aliases unavailable")
+            buffer = ctypes.create_unicode_buffer(required + 1)
+            written = ctypes.windll.kernel32.GetShortPathNameW(
+                str(root), buffer, len(buffer)
+            )
+            if written <= 0:
+                self.skipTest("short path aliases unavailable")
+            alias = Path(buffer.value)
+            if os.path.normcase(str(alias)) == os.path.normcase(str(root)):
+                self.skipTest("distinct short path alias unavailable")
+            settings = PersistedSettings(
+                filename_context=FilenameContext("20260906", "011700"),
+                output_directory=root,
+                staging_directory=alias,
+            )
+            service = ApplicationService(lambda text: 1, settings)
+
+            with self.assertRaises(UnsafeDirectoryError):
+                service.startup()
 
     def test_startup_accepts_explicit_restore_and_install_roots(self):
         with tempfile.TemporaryDirectory() as temporary:
