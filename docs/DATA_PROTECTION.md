@@ -3,7 +3,10 @@
 The recovery layer keeps each generation attempt in its own staging area. If
 work is cancelled or interrupted, completed output is left alone and unfinished
 state is moved to quarantine for review. Repeating the same output request
-chooses a new filename instead of replacing an existing file.
+chooses a new filename instead of replacing an existing file. A completed run
+is recognized only from exact canonical journal fields whose staged and
+published size/SHA-256 evidence agrees with the surviving files; duplicate,
+unknown, or alternate JSON representations are quarantined.
 
 A backup is a versioned ZIP with a manifest and SHA-256 hash for every file. It
 covers settings, history, dictionary data, and approved generic voice-profile
@@ -24,7 +27,11 @@ left in place. Recovery and uninstall copies are retained rather than silently
 discarded. Install, update, explicit rollback, and uninstall also write a
 flushed lifecycle journal. `reconcile_install_lifecycle()` must run during
 startup before the application root is used; every lifecycle entry point calls
-it automatically before beginning a new transition.
+it automatically before beginning a new transition. The reconciler and every
+mutation run under one operating-system process lock. A live owner blocks a
+second process, while process termination releases the claim for recovery.
+The owned implementation also verifies the live lock handle, application root,
+and operation before it reads a lifecycle journal or changes lifecycle state.
 
 Critical roots are held by verified non-delete-sharing directory handles on
 Windows. Staged files are created exclusively and their opened handle is proven

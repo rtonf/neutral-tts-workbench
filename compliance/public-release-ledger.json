@@ -46,19 +46,19 @@
   ],
   "candidate_evidence": {
     "clean_export": "passed_one_hash_pinned_generic_source_file",
-    "public_surface_scan": "passed_precommit_nonignored_candidate_simulation_and_postcommit_git_tree_history_and_two_archive_scans_with_zero_findings",
+    "public_surface_scan": "passed_current_exact_git_tree_and_reachable_history_with_zero_findings; archive_not_rebuilt_for_this_bounded_source_change",
     "application_service_tests": "passed_9_with_1_platform_capability_skip",
     "supply_chain_tests": "passed_13_with_1_platform_capability_skip",
-    "resilience_tests": "passed_13_with_1_platform_capability_skip_including_concurrency_and_junction_races",
+    "resilience_tests": "passed_17_with_1_platform_capability_skip_including_exact_canonical_completed_evidence_integrity_concurrency_and_junction_races",
     "backup_restore_tests": "passed_11_including_keyboard_interrupt_process_death_and_reparse_race_recovery",
-    "install_lifecycle_tests": "passed_16_with_1_platform_capability_skip_including_process_death_and_reparse_races",
+    "install_lifecycle_tests": "passed_17_with_1_platform_capability_skip_including_raw_boundary_process_ownership_death_recovery_and_reparse_races",
     "release_and_distribution_tests": "passed_9_unsigned_pending_fail_closed_contract_tests",
-    "adversarial_review": "max_effort_manual_findings_reproduced_and_p1_remediated_with_regression_tests; independent_post_fix_rerun_not_claimed",
+    "adversarial_review": "independent_read_only_lifecycle_and_journal_findings_reproduced_and_remediated_with_regression_tests; post_fix_confirmation_not_claimed_in_this_public_record",
     "dependency_closure": "internal_validation_passed_and_public_validation_rejected",
     "source_metadata": "deterministic_spdx_2_3_and_cyclonedx_1_7_from_exact_git_tree",
-    "source_archive": "fresh_fixture_repeated_builds_byte_identical_and_independently_verified",
-    "full_tests": "passed_133_with_7_platform_capability_skips",
-    "clean_commit": "passed_single_logical_commit_postcheck",
+    "source_archive": "prior_internal_source_review_evidence_not_rebuilt_for_this_bounded_source_change",
+    "full_tests": "passed_138_with_7_platform_capability_skips",
+    "clean_commit": "passed_current_bounded_source_commit_postcheck",
     "protected_tree_unchanged": "passed_exact_before_after_manifest_match"
   }
 }

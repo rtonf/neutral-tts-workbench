@@ -28,6 +28,13 @@ Every lifecycle operation writes and flushes an intent/phase journal before a
 rename. `reconcile_install_lifecycle()` deterministically resolves an
 interrupted install, update, rollback, or uninstall before startup continues;
 the public lifecycle functions invoke it before starting a new operation.
+Each entry point first holds one operating-system process lock for the complete
+reconcile-and-mutate interval. A readable owner record identifies the active
+process and operation. A contender fails before reading the active journal;
+process termination releases the lock so the next startup can reconcile it.
+The internal reconciliation and mutation boundary independently verifies the
+live lock handle, application root, and operation before accessing a journal
+or changing lifecycle state.
 
 Update verifies both complete layouts, stages the new one, relocates the
 current one to a fresh rollback root, and promotes the new one. Any injected or

@@ -51,6 +51,7 @@ class FaultInjected(RecoveryError):
 
 
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z", re.ASCII)
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 _STATES = frozenset({"prepared", "producing", "ready", "publishing", "completed", "cancelled", "failed"})
 _TERMINAL = frozenset({"completed", "cancelled", "failed"})
 _ALLOWED_TRANSITIONS = {
@@ -62,11 +63,65 @@ _ALLOWED_TRANSITIONS = {
     "cancelled": frozenset(),
     "failed": frozenset(),
 }
+_COMMON_JOURNAL_KEYS = frozenset(
+    {
+        "requested_output",
+        "run_id",
+        "schema_version",
+        "staging_directory",
+        "state",
+    }
+)
+_JOURNAL_KEYS_BY_STATE = {
+    "prepared": _COMMON_JOURNAL_KEYS,
+    "producing": _COMMON_JOURNAL_KEYS,
+    "ready": _COMMON_JOURNAL_KEYS | {"staged_sha256", "staged_size"},
+    "publishing": _COMMON_JOURNAL_KEYS
+    | {"output_name", "staged_sha256", "staged_size"},
+    "completed": _COMMON_JOURNAL_KEYS
+    | {
+        "output_name",
+        "published_sha256",
+        "published_size",
+        "staged_sha256",
+        "staged_size",
+    },
+    "cancelled": _COMMON_JOURNAL_KEYS,
+    "failed": _COMMON_JOURNAL_KEYS | {"error"},
+}
 _REPARSE_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 
 
 def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+
+def _reject_duplicate_pairs(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise ValueError("journal contains duplicate keys")
+        payload[key] = value
+    return payload
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"journal contains non-finite number: {value}")
+
+
+def _decode_canonical_object(raw: bytes) -> dict[str, Any]:
+    payload = json.loads(
+        raw.decode("utf-8", "strict"),
+        object_pairs_hook=_reject_duplicate_pairs,
+        parse_constant=_reject_json_constant,
+    )
+    if not isinstance(payload, dict):
+        raise ValueError("journal root is not an object")
+    if raw != _canonical(payload):
+        raise ValueError("journal is not canonical JSON")
+    return payload
 
 
 def _flush_directory(directory: Path) -> None:
@@ -201,6 +256,63 @@ def _file_digest(path: Path) -> tuple[int, str]:
     return size, digest.hexdigest()
 
 
+def _journal_file_fact(payload: dict[str, Any], prefix: str) -> tuple[int, str]:
+    size = payload.get(f"{prefix}_size")
+    digest = payload.get(f"{prefix}_sha256")
+    if (
+        isinstance(size, bool)
+        or not isinstance(size, int)
+        or size <= 0
+        or not isinstance(digest, str)
+        or _SHA256.fullmatch(digest) is None
+    ):
+        raise ValueError(f"{prefix} output evidence is incomplete")
+    return size, digest
+
+
+def _validate_run_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    state = payload.get("state")
+    if not isinstance(state, str):
+        raise ValueError("journal state is invalid")
+    expected = _JOURNAL_KEYS_BY_STATE.get(state)
+    if expected is None or set(payload) != expected:
+        raise ValueError("journal fields do not match its state")
+    if payload.get("schema_version") != "neutral-tts-run-v1":
+        raise ValueError("schema mismatch")
+    try:
+        run_id = _safe_run_id(payload["run_id"])
+        requested = _safe_name(payload["requested_output"])
+    except RecoveryError as exc:
+        raise ValueError(str(exc)) from exc
+    if requested != payload["requested_output"]:
+        raise ValueError("requested output is not canonically normalized")
+    if payload["staging_directory"] != run_id:
+        raise ValueError("invalid staging directory")
+    if state in {"ready", "publishing", "completed"}:
+        _journal_file_fact(payload, "staged")
+    if state in {"publishing", "completed"}:
+        try:
+            output_name = _safe_name(payload["output_name"])
+        except RecoveryError as exc:
+            raise ValueError("output name is invalid") from exc
+        if output_name != payload["output_name"]:
+            raise ValueError("output name is not canonically normalized")
+    if state == "completed":
+        if _journal_file_fact(payload, "staged") != _journal_file_fact(
+            payload, "published"
+        ):
+            raise ValueError("completed output evidence is inconsistent")
+    if state == "failed" and (
+        not isinstance(payload["error"], str) or not payload["error"]
+    ):
+        raise ValueError("failed journal error is invalid")
+    return payload
+
+
+def _load_canonical_run_journal(path: Path) -> dict[str, Any]:
+    return _validate_run_payload(_decode_canonical_object(path.read_bytes()))
+
+
 def _fsync_file(path: Path) -> None:
     # A write can be acknowledged by the filesystem before its bytes are
     # durable.  Flush the staged payload before recording the READY state.
@@ -291,9 +403,13 @@ class RunHandle:
             if self.manager.is_cancelled(self.run_id):
                 self.cancel()
                 raise RunCancelled("run cancelled")
+            self.manager._assert_roots()
             try:
-                ready = json.loads(self.record.journal_path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                assert_safe_descendant(
+                    self.manager._journal_guard, self.record.journal_path
+                )
+                ready = _load_canonical_run_journal(self.record.journal_path)
+            except (OSError, FilesystemBoundaryError, ValueError) as exc:
                 raise JournalCorrupt("ready journal is unreadable") from exc
             self.manager._assert_run_staging(self.run_id, self.staging_path)
             staged_size, staged_sha256 = _file_digest(self.staging_path)
@@ -303,7 +419,6 @@ class RunHandle:
                 or ready.get("staged_sha256") != staged_sha256
             ):
                 raise JournalCorrupt("staged output does not match the ready journal")
-            self.manager._assert_roots()
             target = _collision_target(self.manager.output_directory, self.record.requested_output)
             self._transition(
                 "publishing",
@@ -544,15 +659,11 @@ class RecoveryManager:
                 getattr(journal.lstat(), "st_file_attributes", 0) & _REPARSE_ATTRIBUTE
             ) or not journal.is_file():
                 raise ValueError("unsafe journal file")
-            payload = json.loads(journal.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("schema_version") != "neutral-tts-run-v1":
-                raise ValueError("schema mismatch")
-            run_id = _safe_run_id(payload["run_id"])
-            requested = _safe_name(payload["requested_output"])
+            payload = _load_canonical_run_journal(journal)
+            run_id = payload["run_id"]
+            requested = payload["requested_output"]
             state = payload["state"]
             staging_name = payload["staging_directory"]
-            if state not in _STATES or staging_name != run_id:
-                raise ValueError("invalid journal state")
             staging = self.staging_root / staging_name
             staging_exists = os.path.lexists(staging)
             if staging_exists and (
@@ -582,6 +693,10 @@ class RecoveryManager:
                     output_name = payload.get("output_name")
                     if not isinstance(output_name, str):
                         raise ValueError("completed run has no output")
+                    staged_fact = _journal_file_fact(payload, "staged")
+                    published_fact = _journal_file_fact(payload, "published")
+                    if staged_fact != published_fact:
+                        raise ValueError("completed output evidence is inconsistent")
                     try:
                         target = self.output_directory / _safe_name(output_name)
                     except RecoveryError as exc:
@@ -590,38 +705,35 @@ class RecoveryManager:
                     if not target.is_file() or target.is_symlink():
                         raise ValueError("completed output is missing")
                     try:
-                        if "published_sha256" in payload and _file_digest(target)[1] != payload["published_sha256"]:
+                        if _file_digest(target) != published_fact:
                             raise ValueError("completed output hash mismatch")
+                        if os.path.lexists(staging):
+                            if _file_digest(staging / "output") != staged_fact:
+                                raise ValueError("completed staged evidence drifted")
                     except RecoveryError as exc:
                         raise ValueError("completed output evidence is unreadable") from exc
                 elif state == "publishing":
                     output_name = payload.get("output_name")
-                    staged_size = payload.get("staged_size")
-                    staged_sha256 = payload.get("staged_sha256")
-                    if (
-                        not isinstance(output_name, str)
-                        or isinstance(staged_size, bool)
-                        or not isinstance(staged_size, int)
-                        or not isinstance(staged_sha256, str)
-                    ):
+                    if not isinstance(output_name, str):
                         raise ValueError("publishing journal evidence is incomplete")
+                    declared_staged_fact = _journal_file_fact(payload, "staged")
                     try:
                         target = self.output_directory / _safe_name(output_name)
                     except RecoveryError as exc:
                         raise ValueError("publishing output name is invalid") from exc
                     staged = staging / "output"
                     try:
-                        staged_fact = _file_digest(staged)
+                        observed_staged_fact = _file_digest(staged)
                     except RecoveryError as exc:
                         raise ValueError("publishing staged evidence is unreadable") from exc
-                    if staged_fact != (staged_size, staged_sha256):
+                    if observed_staged_fact != declared_staged_fact:
                         raise ValueError("publishing staged evidence drifted")
                     if os.path.lexists(target):
                         try:
                             published_size, published_sha256 = _file_digest(target)
                         except RecoveryError as exc:
                             raise ValueError("publishing target is unreadable") from exc
-                        if (published_size, published_sha256) != staged_fact:
+                        if (published_size, published_sha256) != declared_staged_fact:
                             raise ValueError("publishing target is ambiguous")
                         completed_payload = {
                             **payload,
@@ -668,8 +780,8 @@ class RecoveryManager:
                         or not journal.is_file()
                     ):
                         raise ValueError("unsafe journal")
-                    raw = json.loads(journal.read_text(encoding="utf-8"))
-                    candidate = raw.get("run_id") if isinstance(raw, dict) else None
+                    decoded = _decode_canonical_object(journal.read_bytes())
+                    candidate = decoded.get("run_id")
                     if isinstance(candidate, str) and _RUN_ID.fullmatch(candidate):
                         staging = self.staging_root / candidate
                         if staging.exists() or staging.is_symlink():

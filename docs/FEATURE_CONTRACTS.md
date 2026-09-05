@@ -128,7 +128,12 @@ journal. State is flushed at externally visible transitions. Publication uses
 no-replace hard links and deterministic collision names, so an existing output
 is preserved. Startup reconciliation quarantines malformed, incomplete,
 cancelled, failed, and orphan staging state without deleting a completed
-output. Fault injection covers ready and publication boundaries.
+output. A completed journal is accepted only when its staged and published
+size/SHA-256 facts are complete, mutually consistent, and match the surviving
+files. Journal bytes must equal the canonical serialization for the exact
+state-specific field set; duplicate keys, unknown fields, alternate encodings,
+and noncanonical ordering or whitespace are quarantined. Fault injection covers
+ready and publication boundaries.
 
 Backups include exactly settings, history, dictionary data, and approved
 generic voice-profile metadata. The versioned manifest lists all supported
@@ -146,7 +151,11 @@ application root with an external user-data root. Fresh install never replaces
 an existing root. Update retains the prior complete layout, and explicit
 rollback retains the displaced layout. Uninstall relocates only exact
 manifest-owned files; user data is never an implicit target. Each transition is
-journaled before mutation and has an idempotent startup reconciler.
+journaled before mutation and has an idempotent startup reconciler. One
+process-scoped operating-system lock covers reconciliation and the complete
+lifecycle transition; process death releases it for the next startup. The
+owned implementation verifies that the live lock handle is bound to the same
+application root and operation before any journal access or mutation.
 
 The release record binds an internal candidate identifier to exact source and
 artifact hashes, provenance, update/rollback rules, a signature target, and

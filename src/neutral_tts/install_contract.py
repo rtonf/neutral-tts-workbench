@@ -8,11 +8,14 @@ never overwrites an existing installation or rollback tree.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
 import re
 import stat
+import threading
+import time
 import unicodedata
 import uuid
 from collections.abc import Callable, Iterable, Mapping
@@ -32,7 +35,8 @@ from .fs_safety import (
 INSTALL_LAYOUT_SCHEMA: Final = "neutral-install-layout-v1"
 OWNED_FILES_MANIFEST: Final = "OWNED_FILES.json"
 DEMO_VERIFICATION_SCOPE: Final = "DEMO_SOURCE_ONLY"
-INSTALL_JOURNAL_SCHEMA: Final = "neutral-install-lifecycle-v1"
+INSTALL_JOURNAL_SCHEMA: Final = "neutral-install-lifecycle-v2"
+INSTALL_OWNER_SCHEMA: Final = "neutral-install-owner-v1"
 MAX_FILES: Final = 4096
 MAX_FILE_BYTES: Final = 64 * 1024 * 1024
 MAX_TOTAL_BYTES: Final = 256 * 1024 * 1024
@@ -41,6 +45,13 @@ MAX_MANIFEST_BYTES: Final = 4 * 1024 * 1024
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_OBJECT = re.compile(r"[0-9a-f]{40}\Z")
 _CANDIDATE = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,94}[a-z0-9])?\Z")
+_OWNER_TOKEN = re.compile(r"[0-9a-f]{32}\Z")
+_ACTION_OWNER_OPERATION = {
+    "install": "install_layout",
+    "upgrade": "upgrade_layout",
+    "rollback": "rollback_upgrade",
+    "uninstall": "uninstall_owned",
+}
 _ROLES = frozenset({"source", "configuration", "documentation", "metadata"})
 _FORBIDDEN_SUFFIXES = frozenset(
     {
@@ -78,6 +89,233 @@ class InstallStateError(InstallContractError):
 
 
 FaultHook = Callable[[str], None]
+_OWNER_CONTEXT = threading.local()
+
+
+def _owner_lock_path(app: Path) -> Path:
+    return app.parent / f".{app.name}.install-owner.lock"
+
+
+def _owner_record_path(app: Path) -> Path:
+    return app.parent / f".{app.name}.install-owner.json"
+
+
+def _validate_owner(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "acquired_at_ns", "operation", "owner_token", "pid", "schema_version"
+    }:
+        raise InstallStateError("install lifecycle owner identity is invalid")
+    pid = value.get("pid")
+    acquired = value.get("acquired_at_ns")
+    if (
+        value.get("schema_version") != INSTALL_OWNER_SCHEMA
+        or isinstance(pid, bool)
+        or not isinstance(pid, int)
+        or pid <= 0
+        or isinstance(acquired, bool)
+        or not isinstance(acquired, int)
+        or acquired <= 0
+        or not isinstance(value.get("owner_token"), str)
+        or _OWNER_TOKEN.fullmatch(value["owner_token"]) is None
+        or value.get("operation") not in {
+            "install_layout", "reconcile_install_lifecycle", "rollback_upgrade",
+            "uninstall_owned", "upgrade_layout",
+        }
+    ):
+        raise InstallStateError("install lifecycle owner identity is invalid")
+    return value
+
+
+class _LifecycleOwner:
+    """Hold one process-scoped lifecycle claim until the operation finishes.
+
+    The persistent sidecar identifies the last claimant, while the operating
+    system byte-range lock is the authority.  The OS releases that lock if the
+    owning process exits without running cleanup, allowing a later startup to
+    reconcile the durable journal.  A live owner's journal is never examined
+    by another well-behaved process because lock acquisition fails first.
+    """
+
+    def __init__(self, app: Path, operation: str) -> None:
+        self.app = app
+        self.operation = operation
+        self.path = _owner_lock_path(app)
+        self.record_path = _owner_record_path(app)
+        self.identity: dict[str, Any] | None = None
+        self._handle: Any = None
+        self._locked = False
+        self._parent_guard: DirectoryGuard | None = None
+        self._previous_identity: object = None
+        self._previous_claim: object = None
+
+    def _lock(self) -> None:
+        assert self._handle is not None
+        self._handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, BlockingIOError) as exc:
+            raise InstallStateError("another install lifecycle owner is active") from exc
+        self._locked = True
+
+    def _unlock(self) -> None:
+        if not self._locked or self._handle is None:
+            return
+        try:
+            self._handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._locked = False
+
+    def __enter__(self) -> "_LifecycleOwner":
+        try:
+            self._parent_guard = DirectoryGuard(self.app.parent)
+            assert_safe_descendant(
+                self._parent_guard, self.path, allow_missing_leaf=True
+            )
+            if _path_exists(self.path) and (
+                _is_reparse(self.path) or not self.path.is_file()
+            ):
+                raise InstallPathError("install lifecycle owner path is unsafe")
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0)
+            flags |= getattr(os, "O_NOINHERIT", 0)
+            descriptor = os.open(self.path, flags, 0o600)
+            self._handle = os.fdopen(descriptor, "r+b", buffering=0)
+            opened = os.fstat(self._handle.fileno())
+            linked = self.path.stat(follow_symlinks=False)
+            if (
+                _is_reparse(self.path)
+                or not stat.S_ISREG(opened.st_mode)
+                or (opened.st_dev, opened.st_ino) != (linked.st_dev, linked.st_ino)
+            ):
+                raise InstallPathError("install lifecycle owner path changed")
+            self._lock()
+            self._parent_guard.assert_unchanged()
+            linked_after = self.path.stat(follow_symlinks=False)
+            if (
+                _is_reparse(self.path)
+                or (opened.st_dev, opened.st_ino)
+                != (linked_after.st_dev, linked_after.st_ino)
+            ):
+                raise InstallPathError("install lifecycle owner path changed")
+            identity = {
+                "schema_version": INSTALL_OWNER_SCHEMA,
+                "pid": os.getpid(),
+                "owner_token": uuid.uuid4().hex,
+                "operation": self.operation,
+                "acquired_at_ns": time.time_ns(),
+            }
+            _validate_owner(identity)
+            _atomic_lifecycle_json(
+                self.record_path, identity, self._parent_guard
+            )
+            _flush_directory(self.path.parent)
+            self.identity = identity
+            self._previous_identity = getattr(_OWNER_CONTEXT, "identity", None)
+            self._previous_claim = getattr(_OWNER_CONTEXT, "claim", None)
+            _OWNER_CONTEXT.identity = identity
+            _OWNER_CONTEXT.claim = self
+            return self
+        except BaseException as exc:
+            try:
+                try:
+                    self._unlock()
+                except OSError:
+                    pass
+            finally:
+                if self._handle is not None:
+                    self._handle.close()
+                    self._handle = None
+                if self._parent_guard is not None:
+                    self._parent_guard.close()
+                    self._parent_guard = None
+            if isinstance(exc, FilesystemBoundaryError):
+                raise InstallPathError(
+                    "install lifecycle owner boundary changed"
+                ) from exc
+            if isinstance(exc, OSError):
+                raise InstallStateError(
+                    "install lifecycle owner claim is unavailable"
+                ) from exc
+            raise
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        if self._previous_identity is None:
+            try:
+                del _OWNER_CONTEXT.identity
+            except AttributeError:
+                pass
+        else:
+            _OWNER_CONTEXT.identity = self._previous_identity
+        if self._previous_claim is None:
+            try:
+                del _OWNER_CONTEXT.claim
+            except AttributeError:
+                pass
+        else:
+            _OWNER_CONTEXT.claim = self._previous_claim
+        try:
+            self._unlock()
+        finally:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            if self._parent_guard is not None:
+                self._parent_guard.close()
+                self._parent_guard = None
+
+
+def _require_lifecycle_owner(
+    app: Path, operation: str | None = None
+) -> dict[str, Any]:
+    claim = getattr(_OWNER_CONTEXT, "claim", None)
+    identity = getattr(_OWNER_CONTEXT, "identity", None)
+    if (
+        not isinstance(claim, _LifecycleOwner)
+        or claim.identity is not identity
+        or not claim._locked
+        or claim._handle is None
+        or bool(getattr(claim._handle, "closed", True))
+    ):
+        raise InstallStateError("install lifecycle operation has no process owner")
+    if claim.app != app:
+        raise InstallStateError("install lifecycle owner does not match application root")
+    owner = _validate_owner(identity)
+    if operation is not None and owner["operation"] != operation:
+        raise InstallStateError("install lifecycle owner does not match operation")
+    return owner
+
+
+def _serialized_lifecycle(app_index: int, user_index: int):
+    def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(function)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            app_value = kwargs.get("app_root")
+            if app_value is None and len(args) > app_index:
+                app_value = args[app_index]
+            user_value = kwargs.get("user_data_root")
+            if user_value is None and len(args) > user_index:
+                user_value = args[user_index]
+            app, _user = _separate_roots(app_value, user_value)
+            with _LifecycleOwner(app, function.__name__):
+                return function(*args, **kwargs)
+
+        return wrapped
+
+    return decorate
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,10 +704,16 @@ def _journal_path(app: Path) -> Path:
 
 
 def _empty_lifecycle(action: str, app: Path) -> dict[str, Any]:
+    try:
+        expected_operation = _ACTION_OWNER_OPERATION[action]
+    except KeyError as exc:
+        raise InstallStateError("install lifecycle action is invalid") from exc
+    owner = _require_lifecycle_owner(app, expected_operation)
     return {
         "schema_version": INSTALL_JOURNAL_SCHEMA,
         "action": action,
         "app_name": app.name,
+        "owner": dict(owner),
         "phase": "prepared",
         "active_path": None,
         "stage_name": None,
@@ -539,7 +783,7 @@ def _load_lifecycle(app: Path) -> dict[str, Any]:
         raise InstallStateError("install lifecycle journal is unreadable") from exc
     expected = {
         "action", "active_path", "app_name", "displaced_name", "manifest_moved",
-        "moved", "phase", "recovery_name", "retained_name", "schema_version",
+        "moved", "owner", "phase", "recovery_name", "retained_name", "schema_version",
         "stage_name",
     }
     if (
@@ -552,6 +796,7 @@ def _load_lifecycle(app: Path) -> dict[str, Any]:
         or not isinstance(payload.get("manifest_moved"), bool)
     ):
         raise InstallStateError("install lifecycle journal schema is invalid")
+    owner = _validate_owner(payload.get("owner"))
     moved = payload.get("moved")
     if not isinstance(moved, list) or len(moved) != len(set(moved)):
         raise InstallStateError("install lifecycle journal move set is invalid")
@@ -561,6 +806,8 @@ def _load_lifecycle(app: Path) -> dict[str, Any]:
     if active is not None:
         canonical_relative_path(active)
     action = payload["action"]
+    if owner["operation"] != _ACTION_OWNER_OPERATION[action]:
+        raise InstallStateError("install lifecycle owner does not match its action")
     phases = {
         "install": {"prepared", "promoting", "completed"},
         "upgrade": {
@@ -614,10 +861,13 @@ def _move_failed_tree(app: Path, parent_guard: DirectoryGuard, label: str) -> Pa
     return destination
 
 
-def reconcile_install_lifecycle(app_root: Path, user_data_root: Path) -> bool:
-    """Reconcile one durable install/update/uninstall journal before startup."""
+def _reconcile_install_lifecycle_owned(
+    app_root: Path, user_data_root: Path
+) -> bool:
+    """Reconcile a journal while the caller holds the process owner lock."""
 
     app, _user = _separate_roots(app_root, user_data_root)
+    _require_lifecycle_owner(app)
     journal = _journal_path(app)
     if not _path_exists(journal):
         return False
@@ -747,6 +997,14 @@ def reconcile_install_lifecycle(app_root: Path, user_data_root: Path) -> bool:
         return True
 
 
+def reconcile_install_lifecycle(app_root: Path, user_data_root: Path) -> bool:
+    """Reconcile one lifecycle journal only after claiming process ownership."""
+
+    app, user = _separate_roots(app_root, user_data_root)
+    with _LifecycleOwner(app, "reconcile_install_lifecycle"):
+        return _reconcile_install_lifecycle_owned(app, user)
+
+
 def _copy_verified_layout(source: Path, destination: Path, manifest: dict[str, Any]) -> None:
     _check_existing_chain(destination, require_leaf=False)
     destination.mkdir()
@@ -821,6 +1079,7 @@ def create_test_layout(
     return verify_layout(destination)
 
 
+@_serialized_lifecycle(1, 2)
 def install_layout(
     layout_root: Path,
     app_root: Path,
@@ -831,7 +1090,8 @@ def install_layout(
     """Install a verified layout into a previously absent application root."""
 
     app, _user = _separate_roots(app_root, user_data_root)
-    reconcile_install_lifecycle(app, user_data_root)
+    _require_lifecycle_owner(app, "install_layout")
+    _reconcile_install_lifecycle_owned(app, user_data_root)
     layout = _check_existing_chain(layout_root, require_leaf=True)
     manifest = verify_layout(layout)
     _check_existing_chain(app, require_leaf=False)
@@ -866,6 +1126,7 @@ def install_layout(
     return InstallResult("install", manifest["candidate_id"], app, None, manifest["file_count"])
 
 
+@_serialized_lifecycle(1, 2)
 def upgrade_layout(
     layout_root: Path,
     app_root: Path,
@@ -876,7 +1137,8 @@ def upgrade_layout(
     """Upgrade atomically while retaining the complete prior tree for rollback."""
 
     app, _user = _separate_roots(app_root, user_data_root)
-    reconcile_install_lifecycle(app, user_data_root)
+    _require_lifecycle_owner(app, "upgrade_layout")
+    _reconcile_install_lifecycle_owned(app, user_data_root)
     layout = _check_existing_chain(layout_root, require_leaf=True)
     new_manifest = verify_layout(layout)
     old_manifest = verify_layout(app)
@@ -932,7 +1194,7 @@ def upgrade_layout(
     except BaseException as exc:
         try:
             if _path_exists(_journal_path(app)):
-                reconcile_install_lifecycle(app, user_data_root)
+                _reconcile_install_lifecycle_owned(app, user_data_root)
         except BaseException as rollback_exc:
             raise InstallStateError(
                 "upgrade failed and the durable journal needs startup reconciliation"
@@ -945,6 +1207,7 @@ def upgrade_layout(
     )
 
 
+@_serialized_lifecycle(0, 2)
 def rollback_upgrade(
     app_root: Path,
     rollback_root: Path,
@@ -955,7 +1218,8 @@ def rollback_upgrade(
     """Restore a retained prior layout while preserving the displaced layout."""
 
     app, _user = _separate_roots(app_root, user_data_root)
-    reconcile_install_lifecycle(app, user_data_root)
+    _require_lifecycle_owner(app, "rollback_upgrade")
+    _reconcile_install_lifecycle_owned(app, user_data_root)
     rollback = _check_existing_chain(rollback_root, require_leaf=True)
     if rollback.parent != app.parent or rollback == app:
         raise InstallPathError("rollback root must be a distinct sibling of the application root")
@@ -1001,7 +1265,7 @@ def rollback_upgrade(
     except BaseException as exc:
         try:
             if _path_exists(_journal_path(app)):
-                reconcile_install_lifecycle(app, user_data_root)
+                _reconcile_install_lifecycle_owned(app, user_data_root)
         except BaseException as restore_exc:
             raise InstallStateError("rollback failed and the current layout needs reconciliation") from restore_exc
         if isinstance(exc, InstallContractError):
@@ -1023,6 +1287,7 @@ def _remove_empty_owned_directories(app: Path, entries: Iterable[dict[str, Any]]
             pass
 
 
+@_serialized_lifecycle(0, 1)
 def uninstall_owned(
     app_root: Path,
     user_data_root: Path,
@@ -1032,7 +1297,8 @@ def uninstall_owned(
     """Relocate only manifest-owned bytes; user data is never an implicit target."""
 
     app, _user = _separate_roots(app_root, user_data_root)
-    reconcile_install_lifecycle(app, user_data_root)
+    _require_lifecycle_owner(app, "uninstall_owned")
+    _reconcile_install_lifecycle_owned(app, user_data_root)
     manifest = load_manifest(app)
     # Preflight every owned file before moving any byte.  Unknown files are
     # deliberately not inspected as owned and remain in place.
@@ -1094,7 +1360,7 @@ def uninstall_owned(
     except BaseException as exc:
         try:
             if _path_exists(_journal_path(app)):
-                reconcile_install_lifecycle(app, user_data_root)
+                _reconcile_install_lifecycle_owned(app, user_data_root)
         except BaseException as rollback_exc:
             raise InstallStateError("uninstall failed and owned files need reconciliation") from rollback_exc
         if isinstance(exc, InstallContractError):
@@ -1106,7 +1372,8 @@ def uninstall_owned(
 
 
 __all__ = [
-    "DEMO_VERIFICATION_SCOPE", "INSTALL_JOURNAL_SCHEMA", "INSTALL_LAYOUT_SCHEMA", "OWNED_FILES_MANIFEST",
+    "DEMO_VERIFICATION_SCOPE", "INSTALL_JOURNAL_SCHEMA", "INSTALL_LAYOUT_SCHEMA",
+    "INSTALL_OWNER_SCHEMA", "OWNED_FILES_MANIFEST",
     "InstallContractError", "InstallIntegrityError", "InstallPathError", "InstallResult",
     "InstallStateError", "build_manifest", "canonical_relative_path", "create_test_layout",
     "install_layout", "load_manifest", "reconcile_install_lifecycle", "rollback_upgrade", "uninstall_owned",

@@ -192,6 +192,173 @@ class ResilienceTests(unittest.TestCase):
             self.assertEqual(recovered[0].state, "completed")
             self.assertEqual((root / "output" / "linked.wav").read_bytes(), b"durable")
 
+    def test_completed_journal_requires_every_size_and_hash_field(self) -> None:
+        required = (
+            "staged_size",
+            "staged_sha256",
+            "published_size",
+            "published_sha256",
+        )
+        for missing in required:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as name:
+                root = Path(name)
+                manager = RecoveryManager(root / "recovery", root / "output")
+                target = manager.execute(
+                    "complete.wav", lambda path: path.write_bytes(b"original"),
+                    run_id="run-complete",
+                )
+                journal = root / "recovery" / "journals" / "run-complete.json"
+                payload = json.loads(journal.read_text(encoding="utf-8"))
+                payload.pop(missing)
+                journal.write_text(
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+                target.write_bytes(b"changed")
+                recovered = RecoveryManager(
+                    root / "recovery", root / "output"
+                ).reconcile()
+                self.assertEqual(recovered, ())
+                self.assertFalse(journal.exists())
+                self.assertEqual(target.read_bytes(), b"changed")
+                self.assertTrue(
+                    any(
+                        path.name.startswith("run-complete.json-")
+                        for path in (root / "recovery" / "quarantine").iterdir()
+                    )
+                )
+
+    def test_completed_journal_rejects_inconsistent_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            manager = RecoveryManager(root / "recovery", root / "output")
+            target = manager.execute(
+                "complete.wav", lambda path: path.write_bytes(b"complete"),
+                run_id="run-inconsistent",
+            )
+            journal = root / "recovery" / "journals" / "run-inconsistent.json"
+            payload = json.loads(journal.read_text(encoding="utf-8"))
+            payload["published_size"] += 1
+            journal.write_text(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                RecoveryManager(root / "recovery", root / "output").reconcile(),
+                (),
+            )
+            self.assertFalse(journal.exists())
+            self.assertEqual(target.read_bytes(), b"complete")
+            self.assertTrue(
+                any(
+                    path.name.startswith("run-inconsistent.json-")
+                    for path in (root / "recovery" / "quarantine").iterdir()
+                )
+            )
+
+    def test_completed_journal_with_complete_evidence_is_recognized(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            manager = RecoveryManager(root / "recovery", root / "output")
+            manager.execute(
+                "complete.wav", lambda path: path.write_bytes(b"complete"),
+                run_id="run-valid-complete",
+            )
+            recovered = RecoveryManager(
+                root / "recovery", root / "output"
+            ).reconcile()
+            self.assertEqual([record.state for record in recovered], ["completed"])
+
+    def test_completed_journal_requires_exact_canonical_evidence(self) -> None:
+        def canonical(payload: dict[str, object]) -> bytes:
+            return json.dumps(
+                payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+            ).encode("utf-8")
+
+        def duplicate_size(raw: bytes, payload: dict[str, object]) -> bytes:
+            needle = f'"published_size":{payload["published_size"]}'.encode()
+            return raw.replace(needle, b'"published_size":0,' + needle, 1)
+
+        def unknown_key(_raw: bytes, payload: dict[str, object]) -> bytes:
+            return canonical({**payload, "unexpected_evidence": True})
+
+        def reordered(_raw: bytes, payload: dict[str, object]) -> bytes:
+            reversed_payload = dict(reversed(tuple(payload.items())))
+            return json.dumps(
+                reversed_payload, separators=(",", ":"), ensure_ascii=True
+            ).encode("utf-8")
+
+        def escaped_hash(raw: bytes, payload: dict[str, object]) -> bytes:
+            digest = str(payload["published_sha256"])
+            index = next(
+                offset for offset, character in enumerate(digest)
+                if character in "abcdef"
+            )
+            escaped = (
+                digest[:index]
+                + chr(92)
+                + f"u{ord(digest[index]):04x}"
+                + digest[index + 1:]
+            )
+            return raw.replace(digest.encode(), escaped.encode())
+
+        def changed_field(key: str, value: object):
+            def mutate(_raw: bytes, payload: dict[str, object]) -> bytes:
+                return canonical({**payload, key: value})
+
+            return mutate
+
+        mutations = (
+            ("duplicate-size", duplicate_size),
+            ("unknown-key", unknown_key),
+            ("leading-whitespace", lambda raw, _payload: b" " + raw),
+            ("reordered-keys", reordered),
+            ("escaped-hash", escaped_hash),
+            ("boolean-size", changed_field("staged_size", True)),
+            ("string-size", changed_field("published_size", "8")),
+            ("zero-size", changed_field("staged_size", 0)),
+            (
+                "uppercase-hash",
+                lambda _raw, payload: canonical(
+                    {
+                        **payload,
+                        "published_sha256": str(
+                            payload["published_sha256"]
+                        ).upper(),
+                    }
+                ),
+            ),
+            ("short-hash", changed_field("staged_sha256", "0" * 63)),
+        )
+        for label, mutate in mutations:
+            with self.subTest(mutation=label), tempfile.TemporaryDirectory() as name:
+                root = Path(name)
+                manager = RecoveryManager(root / "recovery", root / "output")
+                target = manager.execute(
+                    "complete.wav", lambda path: path.write_bytes(b"complete"),
+                    run_id="run-strict-complete",
+                )
+                journal = (
+                    root / "recovery" / "journals" / "run-strict-complete.json"
+                )
+                raw = journal.read_bytes()
+                payload = json.loads(raw)
+                journal.write_bytes(mutate(raw, payload))
+                recovered = RecoveryManager(
+                    root / "recovery", root / "output"
+                ).reconcile()
+                self.assertEqual(recovered, ())
+                self.assertFalse(journal.exists())
+                self.assertEqual(target.read_bytes(), b"complete")
+                self.assertTrue(
+                    any(
+                        path.name.startswith("run-strict-complete.json-")
+                        for path in (
+                            root / "recovery" / "quarantine"
+                        ).iterdir()
+                    )
+                )
+
     def test_recovery_and_output_roots_must_be_separate(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name).absolute()

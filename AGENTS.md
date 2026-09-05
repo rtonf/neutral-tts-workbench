@@ -85,7 +85,9 @@ state.
   not revert their changes, and must adapt to concurrent edits.
 - Self-report is not model evidence. The parent must inspect the effective local
   turn context and record `turn_context.model` and `turn_context.effort` in the
-  single ignored delegation audit log. A result without observable effective
+  single ignored delegation audit log immediately after dispatch and before
+  using the agent's work. If the effective settings differ, stop that agent
+  and correct the dispatch; do not accept a later self-report. A result without observable effective
   evidence is not gate evidence and must be independently reproduced.
 - Use `medium` for bounded inventory, mechanical tests, straightforward docs,
   or a small contract. Use `high` for implementation, integration design,
@@ -99,6 +101,32 @@ state.
   reviewer at `max`. Any serious finding must be fixed and returned to that
   same reviewer once; a second serious finding in the same category stops the
   candidate rather than starting an unbounded cycle.
+- A review cycle means a completed examination of a fixed candidate. A tool
+  that cannot start because a prerequisite is missing is an environment
+  failure, not a completed review. Record it separately and use an available
+  read-only review method. Preserve the independent post-fix verification.
+- Do not create implementation subagents for the current correction slice.
+  The owning task implements it and may add one independent `max` reviewer at
+  the candidate boundary. Reviewers are read-only and may not spawn children.
+
+## Current correction sequence
+
+- Finish one bounded capability per candidate. First correct lifecycle
+  ownership across processes and state-specific required journal integrity
+  fields. Verify active-owner contention, process death, and damaged completed
+  journals without treating a path guard as a transaction lock.
+- Next connect recovery to the supported application startup and generation
+  path. Acceptance must exercise those entry points, not only call recovery
+  helpers directly. Keep demo output explicitly labeled as demo output.
+- Then establish a real synthesis, save, playback, history, and restart path
+  in the private development runtime. Record exact component versions,
+  artifacts, upstream sources, and distribution conditions separately from
+  the current source-only bill of materials.
+- Freeze each review candidate by content identity. A later change to reviewed
+  implementation or configuration invalidates the affected acceptance claim.
+- The task implements ordinary fixes; the coordinating task owns sequencing
+  and scope decisions; a separate reviewer judges the fixed candidate. Do not
+  describe the coordinator's own design approval as independent acceptance.
 
 ## Stop and reporting rules
 

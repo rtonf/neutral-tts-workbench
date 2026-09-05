@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -209,6 +210,119 @@ class InstallContractTests(unittest.TestCase):
         self.assertEqual(load_manifest(rolled_back.retained_root)["candidate_id"], "source-demo-v2")
         self.assertTrue((self.user_data / "keep.txt").exists())
 
+    def test_live_process_owner_blocks_reconcile_and_competing_upgrade(self) -> None:
+        old_layout = self.make_layout("owner-old", 1)
+        new_layout = self.make_layout("owner-new", 2)
+        app = self.root / "NeutralApp"
+        install_layout(old_layout, app, self.user_data)
+        marker = self.root / "owner-ready"
+        release = self.root / "owner-release"
+        script = """
+import os
+import sys
+import time
+from pathlib import Path
+from neutral_tts.install_contract import upgrade_layout
+
+layout, app, user, marker, release = map(Path, sys.argv[1:])
+
+def hold(stage):
+    if stage != "upgrade.after_stage":
+        return
+    marker.write_text(str(os.getpid()), encoding="ascii")
+    deadline = time.monotonic() + 15
+    while not release.exists():
+        if time.monotonic() >= deadline:
+            raise RuntimeError("owner hold timed out")
+        time.sleep(0.02)
+
+upgrade_layout(layout, app, user, fault_hook=hold)
+"""
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                script,
+                str(new_layout),
+                str(app),
+                str(self.user_data),
+                str(marker),
+                str(release),
+            ],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while not marker.exists() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("upgrade owner did not reach the hold point")
+                time.sleep(0.02)
+            self.assertIsNone(process.poll())
+            owner_path = self.root / ".NeutralApp.install-owner.json"
+            owner = json.loads(owner_path.read_text(encoding="utf-8"))
+            self.assertEqual(owner["pid"], process.pid)
+            self.assertEqual(owner["operation"], "upgrade_layout")
+            journal_path = self.root / ".NeutralApp.install-journal.json"
+            frozen_journal = journal_path.read_bytes()
+            with self.assertRaises(InstallStateError):
+                reconcile_install_lifecycle(app, self.user_data)
+            with self.assertRaises(InstallStateError):
+                upgrade_layout(new_layout, app, self.user_data)
+            retained = self.root / json.loads(frozen_journal)["retained_name"]
+            raw_attempts = {
+                "install": lambda: install_layout.__wrapped__(
+                    new_layout, app, self.user_data
+                ),
+                "upgrade": lambda: upgrade_layout.__wrapped__(
+                    new_layout, app, self.user_data
+                ),
+                "rollback": lambda: rollback_upgrade.__wrapped__(
+                    app, retained, self.user_data
+                ),
+                "uninstall": lambda: uninstall_owned.__wrapped__(
+                    app, self.user_data
+                ),
+            }
+            for action, attempt in raw_attempts.items():
+                with self.subTest(raw_action=action):
+                    with self.assertRaisesRegex(
+                        InstallStateError, "no process owner"
+                    ):
+                        attempt()
+                    self.assertEqual(journal_path.read_bytes(), frozen_journal)
+            self.assertEqual(verify_layout(app)["candidate_id"], "source-demo-v1")
+            release.write_text("continue", encoding="ascii")
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0, stdout + stderr)
+            self.assertEqual(verify_layout(app)["candidate_id"], "source-demo-v2")
+            rollback_roots = [
+                path
+                for path in self.root.iterdir()
+                if path.name.startswith(".NeutralApp.rollback-") and path.is_dir()
+            ]
+            self.assertEqual(len(rollback_roots), 1)
+            rollback_upgrade(app, rollback_roots[0], self.user_data)
+            self.assertEqual(verify_layout(app)["candidate_id"], "source-demo-v1")
+        finally:
+            if process.poll() is None:
+                release.touch(exist_ok=True)
+                try:
+                    process.communicate(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate(timeout=3)
+            else:
+                if process.stdout is not None:
+                    process.stdout.close()
+                if process.stderr is not None:
+                    process.stderr.close()
+
     def test_upgrade_faults_restore_prior_complete_layout(self) -> None:
         for transition in (
             "upgrade.after_stage",
@@ -256,8 +370,15 @@ class InstallContractTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 81)
-        self.assertTrue((self.root / ".NeutralApp.install-journal.json").is_file())
+        journal_path = self.root / ".NeutralApp.install-journal.json"
+        self.assertTrue(journal_path.is_file())
+        interrupted = json.loads(journal_path.read_text(encoding="utf-8"))
+        self.assertNotEqual(interrupted["owner"]["pid"], os.getpid())
         self.assertTrue(reconcile_install_lifecycle(app, self.user_data))
+        self.assertEqual(verify_layout(app)["candidate_id"], "source-demo-v1")
+        upgraded = upgrade_layout(new_layout, app, self.user_data)
+        self.assertEqual(verify_layout(app)["candidate_id"], "source-demo-v2")
+        rollback_upgrade(app, upgraded.retained_root, self.user_data)
         self.assertEqual(verify_layout(app)["candidate_id"], "source-demo-v1")
 
     def test_upgrade_relocated_root_identity_race_cannot_report_success(self) -> None:
