@@ -228,6 +228,15 @@ def _collision_target(output: Path, requested: str) -> Path:
     raise RecoveryError("unable to allocate a collision-free output name")
 
 
+def _exact_target(output: Path, requested: str) -> Path:
+    """Bind publication to the exact admitted name, including case clashes."""
+    identity = unicodedata.normalize("NFC", requested).casefold()
+    for candidate in output.iterdir():
+        if unicodedata.normalize("NFC", candidate.name).casefold() == identity:
+            raise RecoveryError("requested output is no longer available")
+    return output / requested
+
+
 def _file_digest(path: Path) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
@@ -332,6 +341,16 @@ class RunRecord:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class RecoveryReport:
+    """Structured startup reconciliation evidence without private paths."""
+
+    records: tuple[RunRecord, ...]
+    recovered_publications: int
+    verified_completed_outputs: int
+    quarantined_runs: int
+
+
 class RunHandle:
     """A single isolated run and its durable journal."""
 
@@ -394,8 +413,13 @@ class RunHandle:
                     self._transition("failed", error=f"{type(exc).__name__}: {exc}")
             raise
 
-    def publish(self) -> Path:
-        """Atomically publish a ready output without replacing any existing file."""
+    def publish(self, *, allow_collision_suffix: bool = True) -> Path:
+        """Atomically publish without replacement.
+
+        Library callers retain deterministic suffix allocation by default.
+        Application admission uses exact-name mode so a name cannot change
+        after the user-approved preview.
+        """
         lock = self.manager._run_lock(self.run_id)
         with lock:
             if self.record.state != "ready":
@@ -419,7 +443,11 @@ class RunHandle:
                 or ready.get("staged_sha256") != staged_sha256
             ):
                 raise JournalCorrupt("staged output does not match the ready journal")
-            target = _collision_target(self.manager.output_directory, self.record.requested_output)
+            target = (
+                _collision_target(self.manager.output_directory, self.record.requested_output)
+                if allow_collision_suffix
+                else _exact_target(self.manager.output_directory, self.record.requested_output)
+            )
             self._transition(
                 "publishing",
                 output_name=target.name,
@@ -438,7 +466,11 @@ class RunHandle:
                     try:
                         os.link(self.staging_path, target)
                         break
-                    except FileExistsError:
+                    except FileExistsError as exc:
+                        if not allow_collision_suffix:
+                            raise RecoveryError(
+                                "requested output is no longer available"
+                            ) from exc
                         target = _collision_target(
                             self.manager.output_directory, self.record.requested_output
                         )
@@ -678,11 +710,14 @@ class RecoveryManager:
         except Exception as exc:
             raise JournalCorrupt(str(exc)) from exc
 
-    def reconcile(self) -> tuple[RunRecord, ...]:
-        """Reconcile journals in lexical order; quarantine every ambiguity."""
+    def reconcile_report(self) -> RecoveryReport:
+        """Reconcile journals and return privacy-bounded startup evidence."""
         self._assert_roots()
         records: list[RunRecord] = []
         journal_run_ids: set[str] = set()
+        recovered_publications = 0
+        verified_completed_outputs = 0
+        quarantined_runs = 0
         for journal in sorted(self.journal_directory.glob("*.json"), key=lambda p: p.name.casefold()):
             try:
                 payload, staging = self._read_record(journal)
@@ -712,6 +747,7 @@ class RecoveryManager:
                                 raise ValueError("completed staged evidence drifted")
                     except RecoveryError as exc:
                         raise ValueError("completed output evidence is unreadable") from exc
+                    verified_completed_outputs += 1
                 elif state == "publishing":
                     output_name = payload.get("output_name")
                     if not isinstance(output_name, str):
@@ -742,6 +778,7 @@ class RecoveryManager:
                             "published_sha256": published_sha256,
                         }
                         _atomic_json(journal, completed_payload, self._journal_guard)
+                        recovered_publications += 1
                         records.append(
                             RunRecord(
                                 run_id,
@@ -755,21 +792,25 @@ class RecoveryManager:
                         continue
                     self._quarantine(staging, "publication did not reach a completed output")
                     self._quarantine(journal, "publication did not reach a completed output")
+                    quarantined_runs += 1
                     continue
                 elif state in {"prepared", "producing", "ready"}:
                     self._quarantine(staging, "incomplete or ambiguous run")
                     self._quarantine(journal, "incomplete or ambiguous journal")
+                    quarantined_runs += 1
                     continue
                 elif state in {"cancelled", "failed"} and staging.exists():
                     # Cancellation/failure is known, but retaining private
                     # temporary data indefinitely is not useful.  Quarantine
                     # it for inspection instead of deleting it.
                     self._quarantine(staging, "cancelled or failed run")
+                    quarantined_runs += 1
                 if state == "cancelled":
                     self._mark_cancelled(run_id)
                 record = RunRecord(run_id, payload["requested_output"], payload.get("output_name"), state, staging, journal, payload.get("error"))
                 records.append(record)
             except JournalCorrupt as exc:
+                quarantined_runs += 1
                 # Try to quarantine a referenced staging directory even when
                 # the journal itself is malformed.  Never trust malformed
                 # text as a path unless it passes the same run-id grammar.
@@ -790,6 +831,7 @@ class RecoveryManager:
                     pass
                 self._quarantine(journal, str(exc))
             except ValueError as exc:
+                quarantined_runs += 1
                 if os.path.lexists(staging):
                     self._quarantine(staging, "invalid lifecycle evidence")
                 self._quarantine(journal, str(exc))
@@ -799,7 +841,17 @@ class RecoveryManager:
         for staging in sorted(self.staging_root.iterdir(), key=lambda p: p.name.casefold()):
             if staging.name not in journal_run_ids:
                 self._quarantine(staging, "orphan staging directory")
-        return tuple(records)
+                quarantined_runs += 1
+        return RecoveryReport(
+            tuple(records),
+            recovered_publications,
+            verified_completed_outputs,
+            quarantined_runs,
+        )
+
+    def reconcile(self) -> tuple[RunRecord, ...]:
+        """Compatibility view of reconciled terminal run records."""
+        return self.reconcile_report().records
 
     def close(self) -> None:
         """Release non-delete-sharing directory handles owned by the manager."""
@@ -829,4 +881,4 @@ class RecoveryManager:
     begin = start
 
 
-__all__ = ["CancellationError", "FaultInjected", "JournalCorrupt", "RecoveryError", "RecoveryManager", "RunCancelled", "RunHandle", "RunRecord"]
+__all__ = ["CancellationError", "FaultInjected", "JournalCorrupt", "RecoveryError", "RecoveryManager", "RecoveryReport", "RunCancelled", "RunHandle", "RunRecord"]

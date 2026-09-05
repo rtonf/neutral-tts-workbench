@@ -16,6 +16,7 @@ from neutral_tts.application import (
 )
 from neutral_tts.demo_backend import DEMO_SILENCE_ONLY
 from neutral_tts.filename_templates import FilenameContext
+from neutral_tts.resilience import RecoveryError, RunCancelled
 
 
 class ApplicationServiceTests(unittest.TestCase):
@@ -41,6 +42,12 @@ class ApplicationServiceTests(unittest.TestCase):
             self.assertEqual(preview.plan_digest, preview.estimate_digest)
             outcome = service.run("private source text", preview)
             self.assertTrue((Path(temporary) / "output" / outcome.published_wav_name).is_file())
+            self.assertEqual(outcome.public_payload()["operation"], "NEW_GENERATION")
+            self.assertEqual(
+                outcome.public_payload()["startup_recovery"]["operation"],
+                "STARTUP_RECOVERY",
+            )
+            self.assertFalse(outcome.public_payload()["startup_recovery"]["backend_invoked"])
             self.assertEqual(outcome.receipt["status"], "SUCCEEDED")
             self.assertFalse(outcome.public_payload()["demo"]["speech"])
             feedback = service.receipt_feedback(outcome)
@@ -83,6 +90,25 @@ class ApplicationServiceTests(unittest.TestCase):
             outcome = service.run("one", fresh)
             self.assertNotEqual(outcome.published_wav_name, occupied.name)
             self.assertEqual(occupied.read_bytes(), b"keep")
+
+    def test_late_collision_rejects_exact_admitted_name_without_a_suffix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            output = root / "output"
+
+            class RacingBackend(DEMO_SILENCE_ONLY):
+                def generate(self, request):
+                    result = super().generate(request)
+                    (output / request.output_basename).write_bytes(b"keep")
+                    return result
+
+            service.backend = RacingBackend()
+            preview = service.preview("one")
+            with self.assertRaises(RecoveryError):
+                service.run("one", preview)
+            self.assertEqual((output / preview.candidate_wav_name).read_bytes(), b"keep")
+            self.assertEqual([path.name for path in output.iterdir()], [preview.candidate_wav_name])
 
     def test_admission_rejects_a_target_that_changes_during_final_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -164,6 +190,91 @@ class ApplicationServiceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service.run("one", preview)
             self.assertFalse(list((root / "output").iterdir()))
+            # The failed durable run releases its process owner and is safely
+            # reconciled by the next ordinary startup.
+            startup = service.startup()
+            self.assertEqual(startup.status, "RECOVERED")
+            self.assertEqual(startup.quarantined_runs, 1)
+
+    def test_cancellation_releases_owner_and_next_startup_reconciles(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            service = self.make_service(Path(temporary))
+
+            class CancellingBackend(DEMO_SILENCE_ONLY):
+                def generate(self, request):
+                    raise RunCancelled("cancelled by test adapter")
+
+            service.backend = CancellingBackend()
+            preview = service.preview("one")
+            with self.assertRaises(RunCancelled):
+                service.run("one", preview)
+            startup = service.startup()
+            self.assertEqual(startup.status, "RECOVERED")
+            self.assertEqual(startup.quarantined_runs, 1)
+
+    def test_preview_is_non_mutating_and_startup_uses_only_configured_roots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            restore = root / "live-data"
+            install_app = root / "installed-app"
+            install_user = root / "installed-user-data"
+            service._settings = replace(
+                service._settings,
+                restore_live_data_root=restore,
+                install_app_root=install_app,
+                install_user_data_root=install_user,
+            )
+            before = sorted(path.relative_to(root) for path in root.rglob("*"))
+            with (
+                mock.patch.object(service.backend, "generate") as backend_call,
+                mock.patch("neutral_tts.application.reconcile_restore", return_value=True) as restore_call,
+                mock.patch(
+                    "neutral_tts.application.reconcile_install_lifecycle",
+                    return_value=True,
+                ) as install_call,
+            ):
+                service.preview("one")
+                self.assertEqual(before, sorted(path.relative_to(root) for path in root.rglob("*")))
+                restore_call.assert_not_called()
+                install_call.assert_not_called()
+                backend_call.assert_not_called()
+
+                startup = service.startup()
+
+            restore_call.assert_called_once_with(restore)
+            install_call.assert_called_once_with(install_app, install_user)
+            backend_call.assert_not_called()
+            self.assertTrue(startup.restore_reconciled)
+            self.assertTrue(startup.install_reconciled)
+            self.assertFalse(startup.public_payload()["backend_invoked"])
+
+    def test_startup_accepts_explicit_restore_and_install_roots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            restore = root / "live-data"
+            install_app = root / "installed-app"
+            install_user = root / "installed-user-data"
+            untouched = root / "unconfigured"
+            for directory in (restore, install_app, install_user, untouched):
+                directory.mkdir()
+            marker = untouched / "marker"
+            marker.write_bytes(b"keep")
+            service._settings = replace(
+                service._settings,
+                restore_live_data_root=restore,
+                install_app_root=install_app,
+                install_user_data_root=install_user,
+            )
+
+            startup = service.startup()
+
+            self.assertTrue(startup.restore_configured)
+            self.assertTrue(startup.install_configured)
+            self.assertFalse(startup.restore_reconciled)
+            self.assertFalse(startup.install_reconciled)
+            self.assertEqual(marker.read_bytes(), b"keep")
 
     def test_reparse_directory_is_rejected_when_supported(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -6,6 +6,8 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+import os
+import stat
 import sys
 
 from .application import ApplicationService, PersistedSettings
@@ -56,6 +58,36 @@ def _safe_directory(path_value: str, *, label: str) -> Path:
     return path
 
 
+def _configured_root(path_value: str | None, *, label: str) -> Path | None:
+    """Normalize one explicitly supplied root without creating it."""
+
+    if path_value is None:
+        return None
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path = path.absolute()
+    existing = path
+    try:
+        while not os.path.lexists(existing):
+            parent = existing.parent
+            if parent == existing:
+                raise ValueError(f"{label} is unavailable")
+            existing = parent
+        if not existing.is_dir():
+            raise ValueError(f"{label} is unavailable")
+        for component in (existing, *existing.parents):
+            metadata = component.lstat()
+            if component.is_symlink() or bool(
+                getattr(metadata, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+            ):
+                raise ValueError(f"{label} contains a reparse point")
+    except OSError as exc:
+        raise ValueError(f"{label} is unavailable") from exc
+    return path
+
+
 def _text_argument(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str:
     value = args.text
     if value is None:
@@ -83,6 +115,15 @@ def _build_service(args: argparse.Namespace, *, backend: object | None = None) -
         tokenizer_identity=args.tokenizer_identity,
         output_directory=output,
         staging_directory=staging,
+        restore_live_data_root=_configured_root(
+            args.restore_live_data_root, label="restore live-data root"
+        ),
+        install_app_root=_configured_root(
+            args.install_app_root, label="install application root"
+        ),
+        install_user_data_root=_configured_root(
+            args.install_user_data_root, label="install user-data root"
+        ),
     )
     return ApplicationService(demo_token_counter, settings, backend=backend)
 
@@ -101,6 +142,9 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--tokenizer-identity", default=DEMO_TOKENIZER_IDENTITY)
         sub.add_argument("--output-dir", default="neutral-tts-output")
         sub.add_argument("--staging-dir", default="neutral-tts-staging")
+        sub.add_argument("--restore-live-data-root")
+        sub.add_argument("--install-app-root")
+        sub.add_argument("--install-user-data-root")
     return parser
 
 
@@ -114,8 +158,14 @@ def main(argv: list[str] | None = None) -> int:
         source_text = _text_argument(parser, args)
         if args.command == "preview":
             service = _build_service(args)
+            startup = service.startup()
             preview = service.preview(source_text)
-            payload = {"command": "preview", "status": "READY", "preview": preview.public_payload()}
+            payload = {
+                "command": "preview",
+                "status": "READY",
+                "startup_recovery": startup.public_payload(),
+                "preview": preview.public_payload(),
+            }
         else:
             service = _build_service(args, backend=DEMO_SILENCE_ONLY())
             preview = service.preview(source_text)

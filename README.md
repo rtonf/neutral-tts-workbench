@@ -8,7 +8,8 @@ This is a neutral, source-only TTS development lane for six bounded capabilities
    counts plus coarse duration, storage, staging, and device/quality timing
    ranges without invoking a sampler;
 3. a framework-neutral application service and CLI that connect settings,
-   preview, generation admission, safe publication, and receipt feedback;
+   pure preview, startup reconciliation, durable generation admission, safe
+   publication, and receipt feedback;
 4. a fail-closed dependency lock plus deterministic SPDX/CycloneDX source-archive tools
    for local internal source review;
 5. cancellation/crash reconciliation and versioned, integrity-checked data

@@ -100,9 +100,14 @@ forged receipt-like dictionaries are rejected rather than used as history.
 settings, preview, backend authorization, safe publication, and receipt
 feedback. Admission recomputes the pure preview and binds source/settings,
 plan, estimate, collision-resolved filename, output-directory identity, and
-staging-directory identity. Any drift rejects the request before backend use.
+generation-recovery-root identity. Any drift rejects the request before backend use.
 The final collision selection must still equal the previewed candidate; it may
 not silently move to a suffix after the user approved a preview.
+
+`preview()` itself performs no startup reconciliation and creates no recovery
+files. It may read the explicitly configured output directory to select the
+collision candidate. The ordinary CLI `preview` command is also a startup
+entry: it reconciles first and then calls the pure preview method.
 
 The backend receives the immutable internal text plan and one fresh private
 staging pathname. Raw plan text is necessary for an eventual approved adapter,
@@ -112,8 +117,15 @@ store changes while the backend is running.
 
 Before the atomic no-replace publication, the service checks the backend's
 actual sample rate, duration, byte size, and aggregate plan counts against the
-staged PCM16 WAV and the admitted plan. An invalid backend cannot publish first
-and fail receipt validation afterward.
+staged PCM16 WAV and the admitted plan. These checks and strict receipt
+construction complete before the run reaches the durable `ready` state.
+
+Normal `run()` execution holds one operating-system recovery owner from startup
+reconciliation through durable completion. It reconciles the configured
+generation root and only the explicitly supplied restore live-data and install
+application/user-data roots. Startup recovery never invokes the generation
+backend. Its public status is separate from the `NEW_GENERATION` result, and a
+competing ordinary startup is rejected while the owner is live.
 
 The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
 It writes silence, not speech, and its code and JSON output must always say so.
@@ -125,15 +137,18 @@ test, audio-quality test, or Production evidence. See
 
 Each recoverable run owns a unique staging directory and a durable canonical
 journal. State is flushed at externally visible transitions. Publication uses
-no-replace hard links and deterministic collision names, so an existing output
-is preserved. Startup reconciliation quarantines malformed, incomplete,
+no-replace hard links, so an existing output is preserved. General recovery
+library callers can request deterministic collision names; application-admitted
+runs publish only the exact approved name. Startup reconciliation quarantines malformed, incomplete,
 cancelled, failed, and orphan staging state without deleting a completed
 output. A completed journal is accepted only when its staged and published
 size/SHA-256 facts are complete, mutually consistent, and match the surviving
 files. Journal bytes must equal the canonical serialization for the exact
 state-specific field set; duplicate keys, unknown fields, alternate encodings,
-and noncanonical ordering or whitespace are quarantined. Fault injection covers
-ready and publication boundaries.
+and noncanonical ordering or whitespace are quarantined. Structured
+reconciliation evidence distinguishes recovered publication, verified
+completed output, and quarantined run state without reporting a backend rerun.
+Fault injection covers ready and publication boundaries.
 
 Backups include exactly settings, history, dictionary data, and approved
 generic voice-profile metadata. The versioned manifest lists all supported

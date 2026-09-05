@@ -1,4 +1,4 @@
-"""Framework-neutral orchestration for preview, admission, and publication.
+"""Framework-neutral orchestration for preview, recovery, and publication.
 
 This module deliberately contains no web, GUI, model, sampler, or runtime
 integration.  A caller supplies a tokenizer counter and a backend adapter.
@@ -19,18 +19,30 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
+from .backup_restore import reconcile_restore
 from .estimation import Calibration, GenerationEstimate
 from .filename_templates import (
     DEFAULT_TEMPLATE,
     FilenameContext,
     FilenamePreview,
     choose_collision_target,
-    preview_filename,
-    publish_staged_wav,
 )
-from .planning import DictionarySnapshot, PausePolicy, PlanSettings, TextPlan, normalize_public_id
+from .fs_safety import (
+    DirectoryGuard,
+    FilesystemBoundaryError,
+    assert_safe_descendant,
+)
+from .install_contract import reconcile_install_lifecycle
+from .planning import (
+    DictionarySnapshot,
+    PausePolicy,
+    PlanSettings,
+    TextPlan,
+    normalize_public_id,
+)
 from .preview import PreviewResult, pre_generation_preview
 from .receipts import ActualRun, build_success_receipt
+from .resilience import RecoveryManager, RecoveryReport
 
 
 class ApplicationError(ValueError):
@@ -50,7 +62,11 @@ class DigestMismatchError(PreviewAdmissionError):
 
 
 class UnsafeDirectoryError(ApplicationError):
-    """A configured output or staging directory is not safe to use."""
+    """A configured operational directory is not safe to use."""
+
+
+class ApplicationBusyError(ApplicationError):
+    """Another normal application startup or generation currently owns recovery."""
 
 
 def _sha256_payload(value: object) -> str:
@@ -72,7 +88,9 @@ def _safe_existing_directory(value: Path, *, label: str) -> Path:
             raise UnsafeDirectoryError(f"{label} is unavailable")
         for component in (current, *current.parents):
             metadata = component.lstat()
-            if component.is_symlink() or bool(getattr(metadata, "st_file_attributes", 0) & 0x400):
+            if component.is_symlink() or bool(
+                getattr(metadata, "st_file_attributes", 0) & 0x400
+            ):
                 raise UnsafeDirectoryError(f"{label} contains a reparse point")
     except UnsafeDirectoryError:
         raise
@@ -81,15 +99,139 @@ def _safe_existing_directory(value: Path, *, label: str) -> Path:
     return current
 
 
-def _safe_new_staging_path(directory: Path) -> Path:
-    """Return a private, not-yet-created path in an owned staging directory."""
+def _safe_configured_path(value: Path, *, label: str) -> Path:
+    """Validate an explicit root without creating it or discovering alternatives."""
 
-    # The random component is intentionally private and is never serialized.
-    for _ in range(20):
-        candidate = directory / (".neutral-stage-" + uuid.uuid4().hex + ".wav")
-        if not candidate.exists() and not candidate.is_symlink():
-            return candidate
-    raise ApplicationError("unable to reserve a private staging name")
+    if not isinstance(value, Path) or not value.is_absolute():
+        raise UnsafeDirectoryError(f"{label} must be an absolute path")
+    current = value.absolute()
+    existing = current
+    try:
+        while not os.path.lexists(existing):
+            parent = existing.parent
+            if parent == existing:
+                raise UnsafeDirectoryError(f"{label} is unavailable")
+            existing = parent
+        if not existing.is_dir():
+            raise UnsafeDirectoryError(f"{label} is unavailable")
+        for component in (existing, *existing.parents):
+            metadata = component.lstat()
+            if component.is_symlink() or bool(
+                getattr(metadata, "st_file_attributes", 0) & 0x400
+            ):
+                raise UnsafeDirectoryError(f"{label} contains a reparse point")
+    except UnsafeDirectoryError:
+        raise
+    except OSError as exc:
+        raise UnsafeDirectoryError(f"{label} is unavailable") from exc
+    return current
+
+
+class _RecoveryOwner:
+    """Hold the normal-application recovery claim for one operating-system process."""
+
+    def __init__(self, recovery_directory: Path) -> None:
+        self.recovery_directory = recovery_directory
+        self.path = recovery_directory / ".application-owner.lock"
+        self._handle: Any = None
+        self._locked = False
+        self._guard: DirectoryGuard | None = None
+
+    def _lock(self) -> None:
+        assert self._handle is not None
+        self._handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, BlockingIOError) as exc:
+            raise ApplicationBusyError("another application recovery owner is active") from exc
+        self._locked = True
+
+    def _unlock(self) -> None:
+        if not self._locked or self._handle is None:
+            return
+        try:
+            self._handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._locked = False
+
+    def __enter__(self) -> "_RecoveryOwner":
+        try:
+            self._guard = DirectoryGuard(self.recovery_directory)
+            assert_safe_descendant(self._guard, self.path, allow_missing_leaf=True)
+            if os.path.lexists(self.path):
+                metadata = self.path.lstat()
+                if self.path.is_symlink() or bool(
+                    getattr(metadata, "st_file_attributes", 0) & 0x400
+                ) or not stat.S_ISREG(metadata.st_mode):
+                    raise UnsafeDirectoryError("application owner path is unsafe")
+            flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0)
+            flags |= getattr(os, "O_NOINHERIT", 0)
+            descriptor = os.open(self.path, flags, 0o600)
+            self._handle = os.fdopen(descriptor, "r+b", buffering=0)
+            opened = os.fstat(self._handle.fileno())
+            linked = self.path.stat(follow_symlinks=False)
+            if (
+                self.path.is_symlink()
+                or bool(getattr(linked, "st_file_attributes", 0) & 0x400)
+                or not stat.S_ISREG(opened.st_mode)
+                or (opened.st_dev, opened.st_ino) != (linked.st_dev, linked.st_ino)
+            ):
+                raise UnsafeDirectoryError("application owner path changed")
+            self._lock()
+            self._guard.assert_unchanged()
+            linked_after = self.path.stat(follow_symlinks=False)
+            if (
+                self.path.is_symlink()
+                or bool(getattr(linked_after, "st_file_attributes", 0) & 0x400)
+                or (opened.st_dev, opened.st_ino)
+                != (linked_after.st_dev, linked_after.st_ino)
+            ):
+                raise UnsafeDirectoryError("application owner path changed")
+            return self
+        except BaseException as exc:
+            try:
+                try:
+                    self._unlock()
+                except OSError:
+                    pass
+            finally:
+                if self._handle is not None:
+                    self._handle.close()
+                    self._handle = None
+                if self._guard is not None:
+                    self._guard.close()
+                    self._guard = None
+            if isinstance(exc, FilesystemBoundaryError):
+                raise UnsafeDirectoryError("application owner boundary changed") from exc
+            if isinstance(exc, OSError):
+                raise ApplicationError("application owner claim is unavailable") from exc
+            raise
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        try:
+            self._unlock()
+        finally:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            if self._guard is not None:
+                self._guard.close()
+                self._guard = None
 
 
 def _validate_staged_actual(path: Path, actual: ActualRun) -> None:
@@ -145,6 +287,9 @@ class PersistedSettings:
     calibration: Calibration | None = None
     output_directory: Path | None = None
     staging_directory: Path | None = None
+    restore_live_data_root: Path | None = None
+    install_app_root: Path | None = None
+    install_user_data_root: Path | None = None
 
     @property
     def settings_digest(self) -> str:
@@ -170,6 +315,9 @@ class PersistedSettings:
                 "calibration_key": None if self.calibration is None else self.calibration.key,
                 "output_directory": operational_identity(self.output_directory),
                 "staging_directory": operational_identity(self.staging_directory),
+                "restore_live_data_root": operational_identity(self.restore_live_data_root),
+                "install_app_root": operational_identity(self.install_app_root),
+                "install_user_data_root": operational_identity(self.install_user_data_root),
             }
         )
 
@@ -269,6 +417,77 @@ class GenerationAdmission:
     # Verified at admission and intentionally not placed on the backend port
     # or in public payloads.  Publication must remain bound to this directory.
     output_directory: Path
+    recovery_directory: Path
+    run_id: str
+    restore_live_data_root: Path | None = None
+    install_app_root: Path | None = None
+    install_user_data_root: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StartupRecovery:
+    """Minimal public evidence for one explicitly scoped startup reconciliation."""
+
+    recovered_publications: int = 0
+    verified_completed_outputs: int = 0
+    quarantined_runs: int = 0
+    restore_configured: bool = False
+    restore_reconciled: bool = False
+    install_configured: bool = False
+    install_reconciled: bool = False
+
+    @classmethod
+    def from_report(
+        cls,
+        report: RecoveryReport,
+        *,
+        restore_configured: bool,
+        restore_reconciled: bool,
+        install_configured: bool,
+        install_reconciled: bool,
+    ) -> "StartupRecovery":
+        return cls(
+            recovered_publications=report.recovered_publications,
+            verified_completed_outputs=report.verified_completed_outputs,
+            quarantined_runs=report.quarantined_runs,
+            restore_configured=restore_configured,
+            restore_reconciled=restore_reconciled,
+            install_configured=install_configured,
+            install_reconciled=install_reconciled,
+        )
+
+    @property
+    def status(self) -> str:
+        if (
+            self.recovered_publications
+            or self.quarantined_runs
+            or self.restore_reconciled
+            or self.install_reconciled
+        ):
+            return "RECOVERED"
+        if self.verified_completed_outputs:
+            return "VERIFIED"
+        return "CLEAN"
+
+    def public_payload(self) -> dict[str, object]:
+        return {
+            "operation": "STARTUP_RECOVERY",
+            "status": self.status,
+            "backend_invoked": False,
+            "generation": {
+                "recovered_publications": self.recovered_publications,
+                "verified_completed_outputs": self.verified_completed_outputs,
+                "quarantined_runs": self.quarantined_runs,
+            },
+            "restore": {
+                "configured": self.restore_configured,
+                "reconciled": self.restore_reconciled,
+            },
+            "install": {
+                "configured": self.install_configured,
+                "reconciled": self.install_reconciled,
+            },
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,10 +499,13 @@ class ApplicationOutcome:
     backend_identity: str
     demo: bool = False
     demo_label: str | None = None
+    startup_recovery: StartupRecovery = StartupRecovery()
 
     def public_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
+            "operation": "NEW_GENERATION",
             "status": "SUCCEEDED",
+            "startup_recovery": self.startup_recovery.public_payload(),
             "publication": {"wav_name": self.published_wav_name},
             "receipt": self.receipt,
             "receipt_feedback": self.feedback_payload(),
@@ -337,7 +559,93 @@ class ApplicationService:
             raise TypeError("settings store must return PersistedSettings")
         if value.filename_context is None:
             raise ApplicationError("filename context is required")
+        if (value.install_app_root is None) != (value.install_user_data_root is None):
+            raise ApplicationError(
+                "install application and user-data roots must be configured together"
+            )
         return value
+
+    @staticmethod
+    def _operational_roots(
+        settings: PersistedSettings,
+    ) -> tuple[Path, Path, Path | None, Path | None, Path | None]:
+        if settings.output_directory is None or settings.staging_directory is None:
+            raise ApplicationError("output and staging directories are required")
+        output = _safe_existing_directory(settings.output_directory, label="output directory")
+        recovery = _safe_existing_directory(
+            settings.staging_directory, label="recovery directory"
+        )
+        output_key = os.path.normcase(str(output))
+        recovery_key = os.path.normcase(str(recovery))
+        try:
+            common = os.path.normcase(os.path.commonpath((output_key, recovery_key)))
+        except ValueError as exc:
+            raise UnsafeDirectoryError("output and recovery roots are incompatible") from exc
+        if common in {output_key, recovery_key}:
+            raise UnsafeDirectoryError("output and recovery roots must be separate")
+        restore = (
+            None
+            if settings.restore_live_data_root is None
+            else _safe_configured_path(
+                settings.restore_live_data_root, label="restore live-data root"
+            )
+        )
+        install_app = (
+            None
+            if settings.install_app_root is None
+            else _safe_configured_path(
+                settings.install_app_root, label="install application root"
+            )
+        )
+        install_user = (
+            None
+            if settings.install_user_data_root is None
+            else _safe_configured_path(
+                settings.install_user_data_root, label="install user-data root"
+            )
+        )
+        return output, recovery, restore, install_app, install_user
+
+    @staticmethod
+    def _reconcile_owned(
+        manager: RecoveryManager,
+        *,
+        restore_live_data_root: Path | None,
+        install_app_root: Path | None,
+        install_user_data_root: Path | None,
+    ) -> StartupRecovery:
+        report = manager.reconcile_report()
+        restore_reconciled = (
+            reconcile_restore(restore_live_data_root)
+            if restore_live_data_root is not None
+            else False
+        )
+        install_reconciled = (
+            reconcile_install_lifecycle(install_app_root, install_user_data_root)
+            if install_app_root is not None and install_user_data_root is not None
+            else False
+        )
+        return StartupRecovery.from_report(
+            report,
+            restore_configured=restore_live_data_root is not None,
+            restore_reconciled=restore_reconciled,
+            install_configured=install_app_root is not None,
+            install_reconciled=install_reconciled,
+        )
+
+    def startup(self) -> StartupRecovery:
+        """Reconcile only configured roots, without invoking a generation backend."""
+
+        settings = self._current_settings()
+        output, recovery, restore, install_app, install_user = self._operational_roots(settings)
+        with _RecoveryOwner(recovery):
+            with RecoveryManager(recovery, output) as manager:
+                return self._reconcile_owned(
+                    manager,
+                    restore_live_data_root=restore,
+                    install_app_root=install_app,
+                    install_user_data_root=install_user,
+                )
 
     @staticmethod
     def _filename_digest(filename: FilenamePreview, candidate_wav_name: str | None = None) -> str:
@@ -369,7 +677,13 @@ class ApplicationService:
             directory = _safe_existing_directory(settings.output_directory, label="output directory")
             candidate = choose_collision_target(directory, result.filename).name
         source_digest = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
-        return ApplicationPreview(result, self._filename_digest(result.filename, candidate), settings.settings_digest, source_digest, candidate)
+        return ApplicationPreview(
+            result,
+            self._filename_digest(result.filename, candidate),
+            settings.settings_digest,
+            source_digest,
+            candidate,
+        )
 
     def admit(self, source_text: str, preview: ApplicationPreview) -> GenerationAdmission:
         if not isinstance(preview, ApplicationPreview):
@@ -395,38 +709,87 @@ class ApplicationService:
             or preview.candidate_wav_name != fresh.candidate_wav_name
         ):
             raise StalePreviewError("preview is stale")
-        if settings.output_directory is None or settings.staging_directory is None:
-            raise ApplicationError("output and staging directories are required")
-        output = _safe_existing_directory(settings.output_directory, label="output directory")
-        staging = _safe_existing_directory(settings.staging_directory, label="staging directory")
+        output, recovery, restore, install_app, install_user = self._operational_roots(settings)
         target = choose_collision_target(output, fresh.filename)
         if fresh.candidate_wav_name != target.name:
             raise StalePreviewError("preview is stale")
-        request = GenerationRequest(fresh.plan, fresh.estimate, _safe_new_staging_path(staging), target.name)
-        return GenerationAdmission(fresh, request, output)
+        run_id = "app-" + uuid.uuid4().hex
+        staging_path = recovery / "staging" / run_id / "output"
+        request = GenerationRequest(fresh.plan, fresh.estimate, staging_path, target.name)
+        return GenerationAdmission(
+            fresh,
+            request,
+            output,
+            recovery,
+            run_id,
+            restore,
+            install_app,
+            install_user,
+        )
 
     def run(self, source_text: str, preview: ApplicationPreview) -> ApplicationOutcome:
-        if self.backend is None:
+        backend = self.backend
+        if backend is None:
             raise ApplicationError("a generation backend is required")
         try:
-            backend_identity = normalize_public_id(getattr(self.backend, "backend_identity"), label="backend identity")
+            backend_identity = normalize_public_id(
+                getattr(backend, "backend_identity"), label="backend identity"
+            )
         except (TypeError, ValueError) as exc:
             raise ApplicationError("backend identity is invalid") from exc
         admission = self.admit(source_text, preview)
-        result = self.backend.generate(admission.request)
-        if not isinstance(result, BackendResult) or result.staged_path != admission.request.staging_path:
-            raise ApplicationError("backend returned an unexpected staging result")
-        actual = result.actual
-        _validate_staged_actual(result.staged_path, actual)
-        # Backends may omit timing, but the receipt requires strict aggregate
-        # counts and audio facts; demo and real adapters both use this path.
-        receipt = build_success_receipt(admission.preview.plan, admission.preview.estimate, actual)
-        # Publication is the final side effect.  The output directory was
-        # verified and bound in GenerationAdmission; never consult mutable
-        # settings again after the backend has run.
-        published = publish_staged_wav(result.staged_path, admission.output_directory, admission.request.output_basename)
+        receipt: dict[str, Any] | None = None
+        with _RecoveryOwner(admission.recovery_directory):
+            with RecoveryManager(admission.recovery_directory, admission.output_directory) as manager:
+                startup_recovery = self._reconcile_owned(
+                    manager,
+                    restore_live_data_root=admission.restore_live_data_root,
+                    install_app_root=admission.install_app_root,
+                    install_user_data_root=admission.install_user_data_root,
+                )
+                # Startup reconciliation and lock acquisition can change the
+                # directory view.  Preserve the exact admitted candidate.
+                target = choose_collision_target(
+                    admission.output_directory, admission.preview.filename
+                )
+                if target.name != admission.request.output_basename:
+                    raise StalePreviewError("preview is stale")
+                handle = manager.start(
+                    admission.request.output_basename,
+                    run_id=admission.run_id,
+                )
+                if handle.staging_path.absolute() != admission.request.staging_path.absolute():
+                    raise ApplicationError("recovery staging identity is inconsistent")
+
+                def produce(staging_path: Path) -> Path:
+                    nonlocal receipt
+                    if staging_path.absolute() != admission.request.staging_path.absolute():
+                        raise ApplicationError("recovery staging identity is inconsistent")
+                    result = backend.generate(admission.request)
+                    if not isinstance(result, BackendResult) or result.staged_path != staging_path:
+                        raise ApplicationError("backend returned an unexpected staging result")
+                    _validate_staged_actual(result.staged_path, result.actual)
+                    # A run becomes READY only after all receipt facts pass.
+                    receipt = build_success_receipt(
+                        admission.preview.plan,
+                        admission.preview.estimate,
+                        result.actual,
+                    )
+                    return result.staged_path
+
+                handle.produce(produce)
+                published = handle.publish(allow_collision_suffix=False)
+        if receipt is None:
+            raise ApplicationError("completed generation receipt is unavailable")
         demo = backend_identity == "DEMO_SILENCE_ONLY-v1"
-        return ApplicationOutcome(receipt, published.name, backend_identity, demo, "DEMO_SILENCE_ONLY" if demo else None)
+        return ApplicationOutcome(
+            receipt=receipt,
+            published_wav_name=published.name,
+            backend_identity=backend_identity,
+            demo=demo,
+            demo_label="DEMO_SILENCE_ONLY" if demo else None,
+            startup_recovery=startup_recovery,
+        )
 
     @staticmethod
     def receipt_feedback(outcome: ApplicationOutcome) -> dict[str, object]:
@@ -442,10 +805,25 @@ class ApplicationService:
 
 
 __all__ = [
-    "ApplicationError", "ApplicationOutcome", "ApplicationPreview", "ApplicationService", "ApplicationSettings",
-    "Backend", "BackendResult", "DigestMismatchError", "GenerationAdmission",
-    "GenerationRequest", "PersistedSettings", "PreviewAdmissionError", "SettingsStore", "StalePreviewError",
-    "UnsafeDirectoryError", "DEMO_SILENCE_ONLY", "demo_silence_only_backend",
+    "ApplicationBusyError",
+    "ApplicationError",
+    "ApplicationOutcome",
+    "ApplicationPreview",
+    "ApplicationService",
+    "ApplicationSettings",
+    "Backend",
+    "BackendResult",
+    "DEMO_SILENCE_ONLY",
+    "DigestMismatchError",
+    "GenerationAdmission",
+    "GenerationRequest",
+    "PersistedSettings",
+    "PreviewAdmissionError",
+    "SettingsStore",
+    "StalePreviewError",
+    "StartupRecovery",
+    "UnsafeDirectoryError",
+    "demo_silence_only_backend",
 ]
 
 

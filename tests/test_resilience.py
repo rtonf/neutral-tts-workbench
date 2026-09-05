@@ -187,9 +187,12 @@ class ResilienceTests(unittest.TestCase):
                 handle.publish()
             journal = json.loads((root / "recovery" / "journals" / "run-linked.json").read_text())
             self.assertEqual(journal["state"], "publishing")
-            recovered = RecoveryManager(root / "recovery", root / "output").reconcile()
-            self.assertEqual(len(recovered), 1)
-            self.assertEqual(recovered[0].state, "completed")
+            report = RecoveryManager(root / "recovery", root / "output").reconcile_report()
+            self.assertEqual(report.recovered_publications, 1)
+            self.assertEqual(report.verified_completed_outputs, 0)
+            self.assertEqual(report.quarantined_runs, 0)
+            self.assertEqual(len(report.records), 1)
+            self.assertEqual(report.records[0].state, "completed")
             self.assertEqual((root / "output" / "linked.wav").read_bytes(), b"durable")
 
     def test_completed_journal_requires_every_size_and_hash_field(self) -> None:

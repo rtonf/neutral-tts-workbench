@@ -1,6 +1,7 @@
 """Neutral, source-only planning and safe-output core."""
 
 from .application import (
+    ApplicationBusyError,
     ApplicationError,
     ApplicationOutcome,
     ApplicationPreview,
@@ -15,6 +16,7 @@ from .application import (
     PreviewAdmissionError,
     SettingsStore,
     StalePreviewError,
+    StartupRecovery,
     UnsafeDirectoryError,
 )
 from .chunk_planner import ChunkEvidence, ChunkPlanningError, plan_chunks
@@ -94,6 +96,7 @@ from .resilience import (
     FaultInjected,
     RecoveryError,
     RecoveryManager,
+    RecoveryReport,
     RunCancelled,
     RunHandle,
     RunRecord,
@@ -103,6 +106,7 @@ __all__ = [
     "ALLOWED_PLACEHOLDERS",
     "ArchiveRejected",
     "ActualRun",
+    "ApplicationBusyError",
     "ApplicationError",
     "ApplicationOutcome",
     "ApplicationPreview",
@@ -144,6 +148,7 @@ __all__ = [
     "RECEIPT_SCHEMA",
     "RecoveryError",
     "RecoveryManager",
+    "RecoveryReport",
     "ReleaseContractError",
     "RestoreError",
     "RunCancelled",
@@ -151,6 +156,7 @@ __all__ = [
     "RunRecord",
     "SettingsStore",
     "StalePreviewError",
+    "StartupRecovery",
     "TextPlan",
     "UnsafeDirectoryError",
     "build_success_receipt",
