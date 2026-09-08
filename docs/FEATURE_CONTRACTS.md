@@ -126,12 +126,15 @@ actual sample rate, duration, byte size, and aggregate plan counts against the
 staged PCM16 WAV and the admitted plan. These checks and strict receipt
 construction complete before the run reaches the durable `ready` state.
 
-Normal `run()` execution holds one operating-system recovery owner from startup
-reconciliation through durable completion. It reconciles the configured
-generation root and only the explicitly supplied restore live-data and install
-application/user-data roots. Startup recovery never invokes the generation
-backend. Its public status is separate from the `NEW_GENERATION` result, and a
-competing ordinary startup is rejected while the owner is live.
+`startup()` and `run()` use one shared identity-bound recovery context. It binds
+the preflight recovery identity to the operating-system owner, holds the output
+directory guard, and verifies the complete configured-root snapshot before
+reconciliation. It reconciles the configured generation root and only the
+explicitly supplied restore live-data and install application/user-data roots.
+`run()` retains the context through durable completion. Startup recovery never
+invokes the generation backend. Its public status is separate from the
+`NEW_GENERATION` result, and a competing ordinary startup is rejected while the
+owner is live.
 
 The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
 It writes silence, not speech, and its code and JSON output must always say so.

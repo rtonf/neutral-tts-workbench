@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import neutral_tts.application as application_module
 from neutral_tts.application import (
     ApplicationError,
     ApplicationService,
@@ -327,6 +328,37 @@ class ApplicationServiceTests(unittest.TestCase):
             self.assertTrue(startup.restore_reconciled)
             self.assertTrue(startup.install_reconciled)
             self.assertFalse(startup.public_payload()["backend_invoked"])
+
+    def test_startup_binds_output_and_recovery_before_owner_acquisition(self):
+        for role in ("output", "staging"):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                service = self.make_service(root)
+                target = root / role
+                retained = root / f"original-{role}"
+                marker = target / "identity-marker"
+                marker.write_bytes(b"original")
+                real_owner = application_module._RecoveryOwner
+
+                def replace_before_owner(recovery_directory, *, expected_identity=None):
+                    target.rename(retained)
+                    target.mkdir()
+                    return real_owner(
+                        recovery_directory,
+                        expected_identity=expected_identity,
+                    )
+
+                with mock.patch.object(
+                    application_module,
+                    "_RecoveryOwner",
+                    side_effect=replace_before_owner,
+                ):
+                    with self.assertRaises(StalePreviewError):
+                        service.startup()
+
+                self.assertEqual((retained / marker.name).read_bytes(), b"original")
+                self.assertFalse(list(target.iterdir()))
+                self.assertEqual(service.startup().status, "CLEAN")
 
     def test_preview_identity_rejects_output_directory_replacement(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -8,21 +8,23 @@ is recognized only from exact canonical journal fields whose staged and
 published size/SHA-256 evidence agrees with the surviving files; duplicate,
 unknown, or alternate JSON representations are quarantined.
 
-The normal application path holds one operating-system owner across startup
-reconciliation, backend work, validation, and durable publication. A live owner
-rejects a competing ordinary startup; normal return and exceptions release the
-claim, and process termination releases it for the next startup. Backend output
-becomes ready only after WAV facts, aggregate counts, and the success receipt
-agree. Startup recovery verifies or reconciles durable evidence without invoking
-the backend or creating a second publication.
+The normal startup and generation entries share one identity-bound recovery
+context. It binds the recovery owner to the preflight identity, holds the output
+directory guard, and validates the configured-root snapshot before recovery.
+For generation it remains held through backend work, validation, and durable
+publication. A live owner rejects a competing ordinary startup; normal return
+and exceptions release the context, and process termination releases the claim
+for the next startup. Backend output becomes ready only after WAV facts,
+aggregate counts, and the success receipt agree. Startup recovery verifies or
+reconciles durable evidence without invoking the backend or creating a second
+publication.
 
 Generation startup uses the configured recovery root. Restore startup uses an
 explicit live-data root, and install lifecycle startup uses an explicit
 application/user-data root pair. All configured operational roots must be
 physically distinct and non-nested; alternate path spellings do not bypass this
-boundary. Preview and admission bind their physical identities so replacement
-between approval and execution fails closed. Roots are never discovered or
-swept.
+boundary. Startup, preview, and admission bind the required physical identities
+so replacement before use fails closed. Roots are never discovered or swept.
 
 A backup is a versioned ZIP with a manifest and SHA-256 hash for every file. It
 covers settings, history, dictionary data, and approved generic voice-profile

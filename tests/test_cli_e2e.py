@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import neutral_tts.application as application_module
 from neutral_tts.cli import DEMO_TOKENIZER_IDENTITY, main
 
 
@@ -39,6 +40,50 @@ class CliE2ETests(unittest.TestCase):
             self.assertIn("storage_mib", result["preflight"])
             self.assertIn("staging_mib", result["preflight"])
             self.assertTrue(list((root / "out").glob("*.wav")))
+
+    def test_preview_rejects_root_replacement_before_owner_acquisition(self):
+        for role in ("out", "stage"):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                target = root / role
+                retained = root / f"original-{role}"
+                args = [
+                    "--text",
+                    "synthetic input",
+                    "--output-dir",
+                    str(root / "out"),
+                    "--staging-dir",
+                    str(root / "stage"),
+                ]
+                real_owner = application_module._RecoveryOwner
+
+                def replace_before_owner(recovery_directory, *, expected_identity=None):
+                    target.rename(retained)
+                    target.mkdir()
+                    return real_owner(
+                        recovery_directory,
+                        expected_identity=expected_identity,
+                    )
+
+                with mock.patch.object(
+                    application_module,
+                    "_RecoveryOwner",
+                    side_effect=replace_before_owner,
+                ):
+                    code, payload = self.invoke(["preview", *args])
+
+                self.assertEqual(code, 2)
+                self.assertEqual(payload["status"], "ERROR")
+                self.assertEqual(
+                    payload["error"],
+                    {
+                        "code": "WORKFLOW_REJECTED",
+                        "message": "The request could not be completed.",
+                    },
+                )
+                retry_code, retry_payload = self.invoke(["preview", *args])
+                self.assertEqual(retry_code, 0)
+                self.assertEqual(retry_payload["status"], "READY")
 
     def test_error_payload_uses_fixed_privacy_safe_message(self):
         drive_path = "C:" + "/secret/path.wav"

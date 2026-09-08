@@ -28,12 +28,14 @@ The workflow is:
    filename collision drift. Output, recovery, restore, and install roots must
    be physically separate even when different path spellings identify the same
    directory.
-5. `run()` takes a nonblocking operating-system owner claim for the configured
-   generation recovery root. While holding that claim, it reconciles generation
-   journals and the explicitly configured restore/install roots. The claim
-   remains held through generation and publication and is released on every
-   normal return or exception; process termination releases the OS claim for the
-   next startup.
+5. `startup()` and `run()` enter the same identity-bound recovery context. It
+   gives the preflight recovery identity to the operating-system owner, holds a
+   guard for the admitted output directory, and revalidates the configured-root
+   digest before reconciliation. It reconciles generation journals and the
+   explicitly configured restore/install roots. `startup()` then exits;
+   `run()` retains the same context through generation and publication. Every
+   normal return or exception releases the context, and process termination
+   releases the OS claim for the next startup.
 6. The recovery manager creates a durable `prepared` journal and a private
    per-run staging directory. A backend writes exactly the private staging path
    in `GenerationRequest` and
@@ -54,13 +56,14 @@ The workflow is:
    `ApplicationOutcome.feedback_payload()` then exposes actual-versus-estimate
    receipt feedback without source text or paths.
 
-`ApplicationService.startup()` performs the same explicitly scoped
+`ApplicationService.startup()` performs identity-bound, explicitly scoped
 reconciliation without invoking a backend. Ordinary CLI `preview` calls this
 startup entry before its pure preview. CLI `demo-run` receives the startup
-result from `run()` before the new generation begins. Public JSON distinguishes
-`STARTUP_RECOVERY` from `NEW_GENERATION` and states `backend_invoked: false` for
-startup recovery. Completed WAV files are verified and retained; incomplete,
-failed, cancelled, malformed, and orphan run state is moved to quarantine.
+result from the same recovery context used by `run()` before the new generation
+begins. Public JSON distinguishes `STARTUP_RECOVERY` from `NEW_GENERATION` and
+states `backend_invoked: false` for startup recovery. Completed WAV files are
+verified and retained; incomplete, failed, cancelled, malformed, and orphan run
+state is moved to quarantine.
 
 ## Explicit demo adapter
 

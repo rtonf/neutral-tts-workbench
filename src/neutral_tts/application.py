@@ -16,6 +16,8 @@ import stat
 import struct
 import uuid
 import wave
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
@@ -816,6 +818,20 @@ class StartupRecovery:
 
 
 @dataclass(frozen=True, slots=True)
+class _OwnedRecovery:
+    """Resources held by the single application recovery context."""
+
+    manager: RecoveryManager
+    startup_recovery: StartupRecovery
+    owner: _RecoveryOwner
+    output_guard: DirectoryGuard
+
+    def assert_unchanged(self) -> None:
+        self.owner.assert_unchanged()
+        self.output_guard.assert_unchanged()
+
+
+@dataclass(frozen=True, slots=True)
 class ApplicationOutcome:
     """Receipt plus non-schema application evidence (for example demo mode)."""
 
@@ -930,20 +946,79 @@ class ApplicationService:
             install_reconciled=install_reconciled,
         )
 
+    @contextmanager
+    def _recovery_context(
+        self,
+        *,
+        output_directory: Path,
+        recovery_directory: Path,
+        expected_output_identity: _DirectoryIdentity,
+        expected_recovery_identity: _DirectoryIdentity,
+        expected_root_digest: str,
+        restore_live_data_root: Path | None,
+        install_app_root: Path | None,
+        install_user_data_root: Path | None,
+    ) -> Iterator[_OwnedRecovery]:
+        """Acquire, reconcile, and release one identity-bound recovery scope."""
+
+        bound_settings = PersistedSettings(
+            output_directory=output_directory,
+            staging_directory=recovery_directory,
+            restore_live_data_root=restore_live_data_root,
+            install_app_root=install_app_root,
+            install_user_data_root=install_user_data_root,
+        )
+        with _RecoveryOwner(
+            recovery_directory,
+            expected_identity=expected_recovery_identity,
+        ) as owner:
+            with DirectoryGuard(output_directory) as output_guard:
+                if not _identity_matches_guard(expected_output_identity, output_guard):
+                    raise StalePreviewError("output directory identity changed")
+                current_roots = self._operational_roots(bound_settings)
+                if current_roots.identity_digest != expected_root_digest:
+                    raise StalePreviewError("configured root identity changed")
+                owner.assert_unchanged()
+                output_guard.assert_unchanged()
+                with RecoveryManager(recovery_directory, output_directory) as manager:
+                    try:
+                        owner.assert_unchanged()
+                        output_guard.assert_unchanged()
+                        startup_recovery = self._reconcile_owned(
+                            manager,
+                            restore_live_data_root=restore_live_data_root,
+                            install_app_root=install_app_root,
+                            install_user_data_root=install_user_data_root,
+                        )
+                        recovery = _OwnedRecovery(
+                            manager,
+                            startup_recovery,
+                            owner,
+                            output_guard,
+                        )
+                        recovery.assert_unchanged()
+                        yield recovery
+                    finally:
+                        owner.assert_unchanged()
+                        output_guard.assert_unchanged()
+
     def startup(self) -> StartupRecovery:
         """Reconcile only configured roots, without invoking a generation backend."""
 
         settings = self._current_settings()
         roots = self._operational_roots(settings)
         assert roots.output is not None and roots.recovery is not None
-        with _RecoveryOwner(roots.recovery):
-            with RecoveryManager(roots.recovery, roots.output) as manager:
-                return self._reconcile_owned(
-                    manager,
-                    restore_live_data_root=roots.restore,
-                    install_app_root=roots.install_app,
-                    install_user_data_root=roots.install_user,
-                )
+        with self._recovery_context(
+            output_directory=roots.output,
+            recovery_directory=roots.recovery,
+            expected_output_identity=roots.identity("output"),
+            expected_recovery_identity=roots.identity("recovery"),
+            expected_root_digest=roots.identity_digest,
+            restore_live_data_root=roots.restore,
+            install_app_root=roots.install_app,
+            install_user_data_root=roots.install_user,
+        ) as recovery:
+            return recovery.startup_recovery
 
     @staticmethod
     def _filename_digest(filename: FilenamePreview, candidate_wav_name: str | None = None) -> str:
@@ -1054,91 +1129,69 @@ class ApplicationService:
         )
         admission = self.admit(source_text, preview)
         receipt: dict[str, Any] | None = None
-        bound_settings = PersistedSettings(
+        with self._recovery_context(
             output_directory=admission.output_directory,
-            staging_directory=admission.recovery_directory,
+            recovery_directory=admission.recovery_directory,
+            expected_output_identity=admission.output_identity,
+            expected_recovery_identity=admission.recovery_identity,
+            expected_root_digest=admission.root_identity_digest,
             restore_live_data_root=admission.restore_live_data_root,
             install_app_root=admission.install_app_root,
             install_user_data_root=admission.install_user_data_root,
-        )
-        with _RecoveryOwner(
-            admission.recovery_directory,
-            expected_identity=admission.recovery_identity,
-        ) as owner:
-            with DirectoryGuard(admission.output_directory) as output_guard:
-                if not _identity_matches_guard(admission.output_identity, output_guard):
-                    raise StalePreviewError("output directory identity changed")
-                current_roots = _snapshot_operational_roots(
-                    bound_settings, require_core=True
+        ) as recovery:
+            startup_recovery = recovery.startup_recovery
+            # Startup reconciliation and lock acquisition can change the
+            # directory view. Preserve the exact admitted candidate.
+            target = choose_collision_target(
+                admission.output_directory, admission.preview.filename
+            )
+            if target.name != admission.request.output_basename:
+                raise StalePreviewError("preview is stale")
+            handle = recovery.manager.start(
+                admission.request.output_basename,
+                run_id=admission.run_id,
+            )
+            if (
+                handle.staging_path.absolute()
+                != admission.request.staging_path.absolute()
+            ):
+                raise ApplicationError(
+                    "recovery staging identity is inconsistent"
                 )
-                if current_roots.identity_digest != admission.root_identity_digest:
-                    raise StalePreviewError("configured root identity changed")
-                owner.assert_unchanged()
-                output_guard.assert_unchanged()
-                with RecoveryManager(
-                    admission.recovery_directory, admission.output_directory
-                ) as manager:
-                    startup_recovery = self._reconcile_owned(
-                        manager,
-                        restore_live_data_root=admission.restore_live_data_root,
-                        install_app_root=admission.install_app_root,
-                        install_user_data_root=admission.install_user_data_root,
-                    )
-                    owner.assert_unchanged()
-                    output_guard.assert_unchanged()
-                    # Startup reconciliation and lock acquisition can change
-                    # the directory view. Preserve the exact admitted candidate.
-                    target = choose_collision_target(
-                        admission.output_directory, admission.preview.filename
-                    )
-                    if target.name != admission.request.output_basename:
-                        raise StalePreviewError("preview is stale")
-                    handle = manager.start(
-                        admission.request.output_basename,
-                        run_id=admission.run_id,
-                    )
-                    if (
-                        handle.staging_path.absolute()
-                        != admission.request.staging_path.absolute()
-                    ):
-                        raise ApplicationError(
-                            "recovery staging identity is inconsistent"
-                        )
 
-                    def produce(staging_path: Path) -> Path:
-                        nonlocal receipt
-                        if (
-                            staging_path.absolute()
-                            != admission.request.staging_path.absolute()
-                        ):
-                            raise ApplicationError(
-                                "recovery staging identity is inconsistent"
-                            )
-                        result = backend.generate(admission.request)
-                        if (
-                            not isinstance(result, BackendResult)
-                            or result.staged_path != staging_path
-                        ):
-                            raise ApplicationError(
-                                "backend returned an unexpected staging result"
-                            )
-                        _validate_staged_actual(
-                            result.staged_path,
-                            result.actual,
-                            require_silence=demo,
-                        )
-                        # A run becomes READY only after all receipt facts pass.
-                        receipt = build_success_receipt(
-                            admission.preview.plan,
-                            admission.preview.estimate,
-                            result.actual,
-                        )
-                        return result.staged_path
+            def produce(staging_path: Path) -> Path:
+                nonlocal receipt
+                if (
+                    staging_path.absolute()
+                    != admission.request.staging_path.absolute()
+                ):
+                    raise ApplicationError(
+                        "recovery staging identity is inconsistent"
+                    )
+                result = backend.generate(admission.request)
+                if (
+                    not isinstance(result, BackendResult)
+                    or result.staged_path != staging_path
+                ):
+                    raise ApplicationError(
+                        "backend returned an unexpected staging result"
+                    )
+                _validate_staged_actual(
+                    result.staged_path,
+                    result.actual,
+                    require_silence=demo,
+                )
+                # A run becomes READY only after all receipt facts pass.
+                receipt = build_success_receipt(
+                    admission.preview.plan,
+                    admission.preview.estimate,
+                    result.actual,
+                )
+                return result.staged_path
 
-                    handle.produce(produce)
-                    owner.assert_unchanged()
-                    output_guard.assert_unchanged()
-                    published = handle.publish(allow_collision_suffix=False)
+            handle.produce(produce)
+            recovery.assert_unchanged()
+            published = handle.publish(allow_collision_suffix=False)
         if receipt is None:
             raise ApplicationError("completed generation receipt is unavailable")
         return ApplicationOutcome(
