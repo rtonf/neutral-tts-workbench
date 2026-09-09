@@ -155,6 +155,68 @@ class PublicSurfaceScanTests(unittest.TestCase):
         report = scan_public_surface(self.root, self.allowlist)
         self.assertTrue(any(x["code"] == "local_path" for x in report["findings"]))
 
+    def test_unc_paths_are_distinguished_from_delimiter_only_source_syntax(self):
+        separator = chr(92)
+        server = "server-node"
+        share = "shared-data"
+        positive_payloads = {
+            "unc.py": (separator * 2 + server + separator + share).encode("utf-8"),
+            "mixed_unc.py": (separator * 2 + server + "/" + share).encode("utf-8"),
+            "raw_source_unc.py": (
+                'path = r"' + separator * 2 + server + separator + share + '"'
+            ).encode("utf-8"),
+            "escaped_unc.py": (
+                'path = "' + separator * 4 + server + separator * 2 + share + '"'
+            ).encode("utf-8"),
+            "extended_unc.py": (
+                separator * 2 + "?" + separator + "UNC" + separator + server + separator + share
+            ).encode("utf-8"),
+            "escaped_extended_unc.py": (
+                separator * 4 + "?" + separator * 2 + "UNC" + separator * 2 + server
+            ).encode("utf-8"),
+            "device.py": (separator * 2 + "." + separator + "PhysicalDrive0").encode("utf-8"),
+            "extended_drive.py": (
+                separator * 2 + "?" + separator + "R:" + separator + "synthetic"
+            ).encode("utf-8"),
+            "escaped_device.py": (
+                separator * 4 + "." + separator * 2 + "PIPE" + separator * 2 + "synthetic-channel"
+            ).encode("utf-8"),
+            "drive.py": ("Q:" + separator + "synthetic" + separator + "artifact").encode("utf-8"),
+            "unix.py": ("/" + "home" + "/synthetic-user/artifact").encode("utf-8"),
+            "utf16_unc.py": (separator * 2 + server + separator + share).encode("utf-16-le"),
+            "utf16be_unc.py": (separator * 2 + server + separator + share).encode("utf-16-be"),
+        }
+        for name, data in positive_payloads.items():
+            (self.root / "src" / name).write_bytes(data)
+
+        report = scan_public_surface(self.root, self.allowlist)
+        local_path_files = {
+            item["path"] for item in report["findings"] if item["code"] == "local_path"
+        }
+        self.assertEqual(
+            {f"src/{name}" for name in positive_payloads},
+            local_path_files,
+        )
+
+        delimiter_only = "\n".join(
+            (
+                'return value.rstrip("' + separator * 2 + '/")',
+                "character_class = '[" + separator * 2 + "/]'",
+                "escaped_delimiters = '" + separator * 4 + "/'",
+                "backslashes_only = '" + separator * 3 + "'",
+                "namespace_marker_only = '" + separator * 2 + "?'",
+                "device_marker_only = '" + separator * 2 + ".'",
+            )
+        )
+        (self.root / "src" / "delimiter_only.py").write_text(delimiter_only, encoding="utf-8")
+        report = scan_public_surface(self.root, self.allowlist)
+        self.assertFalse(
+            any(
+                item["code"] == "local_path" and item["path"] == "src/delimiter_only.py"
+                for item in report["findings"]
+            )
+        )
+
     def test_zip_and_tar_members_are_inspected(self):
         archive = self.root / "candidate.zip"
         with zipfile.ZipFile(archive, "w") as zf:

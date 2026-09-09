@@ -40,7 +40,11 @@ _BACKSLASH = chr(92)
 _DRIVE_PATH = re.compile(
     r"(?i)(?<![A-Za-z0-9])[A-Z]" + ":" + "[" + re.escape("/" + _BACKSLASH) + r"][^\s\"']*"
 )
-_UNC_PATH = re.compile(re.escape(_BACKSLASH * 2) + r"[^\s\"']+")
+_UNC_PATH = re.compile(
+    re.escape(_BACKSLASH * 2)
+    + r"(?:[?.][" + re.escape("/" + _BACKSLASH) + r"]+)?"
+    + r"[^" + re.escape("/" + _BACKSLASH + ".?") + r"\s\"']"
+)
 _UNIX_PRIVATE_PATH = re.compile(r"(?<![\w])/(?:Users|home|private|var/folders|tmp|mnt|workspace)/[^\s\"']*")
 _CREDENTIAL = re.compile(r"(?i)\b(?:api[_ -]?key|access[_ -]?token|client[_ -]?secret|password|passwd|private[_ -]?key|authorization|bearer|secret)\b\s*[:=]\s*['\"]?[^\s,'\"]{4,}")
 _DENY_EXTENSIONS = {
