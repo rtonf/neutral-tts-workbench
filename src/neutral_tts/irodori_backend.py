@@ -9,6 +9,7 @@ application-owned staging path.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import math
 import operator
@@ -16,11 +17,10 @@ import os
 import stat
 import struct
 import time
-import wave
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import BinaryIO, Protocol
 
 from .application import (
     ApplicationError,
@@ -36,6 +36,7 @@ from .fs_safety import (
     open_exclusive_binary,
 )
 from .receipts import ActualRun
+from .resilience import RecoveryError, _file_digest
 
 
 class IrodoriBackendError(ApplicationError):
@@ -373,25 +374,63 @@ class IrodoriBackend:
         chunks: Sequence[bytes],
         pause_frames: int,
         guard: DirectoryGuard,
-    ) -> int:
+    ) -> tuple[int, str]:
+        pause_bytes = pause_frames * 2 * max(len(chunks) - 1, 0)
+        data_size = sum(len(chunk) for chunk in chunks) + pause_bytes
+        if data_size <= 0 or data_size > 0xFFFFFFFF - 36:
+            raise IrodoriBackendError("synthesis WAV extent is unsupported")
+        header = struct.pack(
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF",
+            36 + data_size,
+            b"WAVE",
+            b"fmt ",
+            16,
+            1,
+            1,
+            IrodoriBackend.expected_sample_rate,
+            IrodoriBackend.expected_sample_rate * 2,
+            2,
+            16,
+            b"data",
+            data_size,
+        )
+        expected_size = len(header) + data_size
+        expected_digest = hashlib.sha256()
+
+        def write_exact(raw: BinaryIO, block: bytes) -> None:
+            written = raw.write(block)
+            if written != len(block):
+                raise OSError("short staging write")
+            expected_digest.update(block)
+
         try:
             with open_exclusive_binary(guard, path) as raw:
-                with wave.open(raw, "wb") as wav:
-                    wav.setnchannels(1)
-                    wav.setsampwidth(2)
-                    wav.setframerate(IrodoriBackend.expected_sample_rate)
-                    for index, pcm in enumerate(chunks):
-                        wav.writeframesraw(pcm)
-                        if index < len(chunks) - 1:
-                            remaining = pause_frames
-                            while remaining:
-                                block = min(remaining, 32_768)
-                                wav.writeframesraw(bytes(block * 2))
-                                remaining -= block
+                descriptor_before = os.fstat(raw.fileno())
+                write_exact(raw, header)
+                for index, pcm in enumerate(chunks):
+                    write_exact(raw, pcm)
+                    if index < len(chunks) - 1:
+                        remaining = pause_frames
+                        while remaining:
+                            block_frames = min(remaining, 32_768)
+                            write_exact(raw, bytes(block_frames * 2))
+                            remaining -= block_frames
                 raw.flush()
                 os.fsync(raw.fileno())
+                descriptor_after = os.fstat(raw.fileno())
+                if (
+                    raw.tell() != expected_size
+                    or descriptor_after.st_size != expected_size
+                    or (descriptor_before.st_dev, descriptor_before.st_ino)
+                    != (descriptor_after.st_dev, descriptor_after.st_ino)
+                ):
+                    raise UnsafeDirectoryError(
+                        "staging descriptor changed during generation"
+                    )
             guard.assert_unchanged()
-        except FilesystemBoundaryError as exc:
+            observed_size, observed_sha256 = _file_digest(path)
+        except (FilesystemBoundaryError, RecoveryError) as exc:
             raise UnsafeDirectoryError(
                 "staging path changed during generation"
             ) from exc
@@ -399,10 +438,11 @@ class IrodoriBackend:
         if (
             not stat.S_ISREG(metadata.st_mode)
             or path.is_symlink()
-            or metadata.st_size < 44
+            or (observed_size, observed_sha256)
+            != (expected_size, expected_digest.hexdigest())
         ):
-            raise UnsafeDirectoryError("staging path changed during generation")
-        return metadata.st_size
+            raise UnsafeDirectoryError("staging bytes changed during generation")
+        return observed_size, observed_sha256
 
     @staticmethod
     def _cleanup(
@@ -504,7 +544,7 @@ class IrodoriBackend:
 
                 pause_frames = request.plan.pause_policy.samples
                 frame_count += pause_frames * request.plan.boundary_count
-                wav_bytes = self._write_wave(
+                wav_bytes, staged_sha256 = self._write_wave(
                     request.staging_path,
                     chunk_pcm,
                     pause_frames,
@@ -521,7 +561,11 @@ class IrodoriBackend:
                 generation_seconds=elapsed,
                 staging_bytes_peak=wav_bytes,
             )
-            return BackendResult(request.staging_path, actual)
+            return BackendResult(
+                request.staging_path,
+                actual,
+                staged_sha256=staged_sha256,
+            )
         except BaseException as exc:
             primary_error = exc
             raise

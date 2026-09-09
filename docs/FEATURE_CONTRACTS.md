@@ -134,8 +134,11 @@ unsupported lifecycle configuration.
 
 Before the atomic no-replace publication, the service checks the backend's
 actual sample rate, duration, byte size, and aggregate plan counts against the
-staged PCM16 WAV and the admitted plan. These checks and strict receipt
-construction complete before the run reaches the durable `ready` state.
+staged PCM16 WAV and the admitted plan. A backend may additionally return the
+SHA-256 of the exact bytes it intended to emit. The service hashes one stable
+descriptor read, compares that optional evidence, and passes the validated
+size/SHA-256 to recovery; recovery rehashes it before the durable `ready`
+state. These checks and strict receipt construction complete before `ready`.
 
 The optional Irodori-TTS compatible source adapter is host-injected and keeps
 optional imports, runtime resources, reference paths, and rights evidence out
@@ -143,9 +146,11 @@ of public payloads. Its tokenizer counter validates the pinned vocabulary and
 BOS identity without creating an inference runtime. Generation requires
 watermark readiness, checks every runtime token count before sampling, holds a
 host-verified reference lease, accepts bounded 48 kHz mono sample data, inserts
-the plan's exact boundary pauses, writes one application-owned staging WAV, and
-always closes an opened runtime. The host supplies the exact adapter and
-resource objects; this repository supplies no engine or asset payload.
+the plan's exact boundary pauses, writes one application-owned staging WAV,
+hashes the deterministic header/PCM/pause bytes while writing, verifies the
+closed file against that intended-byte hash, and always closes an opened
+runtime. The host supplies the exact adapter and resource objects; this
+repository supplies no engine or asset payload.
 Its repository tests use fake adapter/runtime objects and synthetic PCM; they
 do not establish real-model execution, voice quality, consent, or
 redistribution approval.
@@ -163,8 +168,10 @@ Restore and install lifecycle integration is a separate hosting boundary.
 Supplying any corresponding root field to `ApplicationService`, or any reserved
 lifecycle-root option to the ordinary CLI, returns an explicit unsupported
 configuration error before generation roots are inspected, created, locked, or
-reconciled and before backend identity is read. The standalone backup/restore
-and install APIs retain their own contracts below.
+reconciled and before backend identity is read. For `real-run`, lifecycle
+rejection and a model-free source/template/root/history preflight also precede
+the host runtime factory. The standalone backup/restore and install APIs retain
+their own contracts below.
 
 The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
 It writes silence, not speech, and its code and JSON output must always say so.
@@ -180,13 +187,18 @@ History is an optional second phase of a recovery-owned generation, not a
 second publication mechanism. After WAV and receipt validation but before
 publication, a canonical pending sidecar binds the run ID, requested output
 basename, staged size/SHA-256, source-free receipt, backend identity, runtime
-configuration digest, and voice-rights-manifest digest. It becomes completed
-only when a completed recovery record names the same output, carries the same
-published size/SHA-256, and the current regular output file still has those
-exact bytes. Process loss after the publication link is recoverable: the next
-startup completes the generation journal first and then the matching history
-sidecar without tokenizer or backend access. Invalid, unprovable, changed, or
-linked history entries are moved to quarantine.
+configuration digest, and voice-rights-manifest digest. A canonical SHA-256 of
+all immutable sidecar claims, including its creation time, is copied into the
+recovery journal before publication; only sidecar state and completion time
+change afterward. It becomes completed only when a completed recovery record
+names the same output, carries the same sidecar binding and published
+size/SHA-256, and the current regular output file still has those exact bytes.
+The WAV is reparsed and its byte count, sample rate, and frame-derived duration
+must also equal the receipt. Process loss after the publication link is
+recoverable: the next startup completes the generation journal first and then
+the matching history sidecar without tokenizer or backend access. Invalid,
+unprovable, immutably changed, or linked history entries are moved to
+quarantine.
 
 History payloads expose a bounded run ID, WAV basename, size/SHA-256, public
 backend identity, receipt aggregate facts, relation, and completion time. They
@@ -200,6 +212,13 @@ size/SHA-256 with history, validates a non-empty mono PCM16 WAV, and gives the
 same verified byte string to synchronous Windows `winsound` playback. Startup,
 history listing, and playback do not import or load the synthesis runtime.
 
+Output and recovery roots are owner-private local trust boundaries. Directory
+guards and the staged/application/recovery/history hash chain detect drift
+between workflow stages, but they are not an authenticity mechanism against a
+different process already authorized to rewrite every file as the same
+operating-system account. Hosts must restrict those roots with suitable ACLs
+and must not share them with an untrusted writer.
+
 ## Recovery and backup contract
 
 Each recoverable run owns a unique staging directory and a durable canonical
@@ -210,8 +229,10 @@ runs publish only the exact approved name. Startup reconciliation quarantines ma
 cancelled, failed, and orphan staging state without deleting a completed
 output. A completed journal is accepted only when its staged and published
 size/SHA-256 facts are complete, mutually consistent, and match the surviving
-files. Journal bytes must equal the canonical serialization for the exact
-state-specific field set; duplicate keys, unknown fields, alternate encodings,
+files. When history is enabled, the publishing and completed journal also
+carry the canonical immutable-sidecar SHA-256. Journal bytes must equal the
+canonical serialization for the exact state-specific field set; duplicate
+keys, unknown fields, alternate encodings,
 and noncanonical ordering or whitespace are quarantined. Structured
 reconciliation evidence distinguishes recovered publication, verified
 completed output, and quarantined run state without reporting a backend rerun.

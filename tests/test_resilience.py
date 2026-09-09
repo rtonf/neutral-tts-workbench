@@ -127,6 +127,30 @@ class ResilienceTests(unittest.TestCase):
             self.assertFalse(manager.is_cancelled(handle.run_id))
             self.assertEqual((root / "output" / "claimed.wav").read_bytes(), b"claimed")
 
+    def test_publish_rejects_same_size_change_after_link(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            manager = RecoveryManager(root / "recovery", root / "output")
+            handle = manager.start("changed.wav", run_id="run-link-change")
+            handle.produce(lambda path: path.write_bytes(b"original"))
+            real_link = os.link
+
+            def link_then_change(source: Path, target: Path) -> None:
+                real_link(source, target)
+                with target.open("r+b") as published:
+                    published.seek(0)
+                    published.write(b"changed!")
+
+            with patch(
+                "neutral_tts.resilience.os.link",
+                side_effect=link_then_change,
+            ):
+                with self.assertRaises(RecoveryError):
+                    handle.publish()
+            self.assertEqual(handle.record.state, "failed")
+            journal = json.loads(handle.record.journal_path.read_text("utf-8"))
+            self.assertEqual(journal["state"], "failed")
+
     def test_fault_injection_leaves_durable_transition_for_reconciliation(self) -> None:
         def inject(state: str) -> None:
             if state == "ready":

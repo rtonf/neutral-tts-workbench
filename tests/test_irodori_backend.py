@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import math
 import tempfile
 import unittest
@@ -9,10 +10,13 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
+import neutral_tts.irodori_backend as irodori_backend_module
 from neutral_tts.application import (
+    ApplicationError,
     ApplicationService,
     GenerationRequest,
     PersistedSettings,
+    UnsafeDirectoryError,
 )
 from neutral_tts.estimation import estimate_from_plan
 from neutral_tts.filename_templates import FilenameContext
@@ -343,6 +347,10 @@ class IrodoriBackendTests(unittest.TestCase):
                 math.isclose(result.actual.duration_seconds, 53 / 48_000)
             )
             self.assertEqual(result.actual.wav_bytes, result.staged_path.stat().st_size)
+            self.assertEqual(
+                result.staged_sha256,
+                hashlib.sha256(result.staged_path.read_bytes()).hexdigest(),
+            )
             self.assertEqual(adapter.closed, 1)
             self.assertFalse(adapter.lease.active)
             self.assertEqual([item.text for item in adapter.requests], ["a" * 144, "a"])
@@ -505,6 +513,89 @@ class IrodoriBackendTests(unittest.TestCase):
             self.assertEqual(payload["backend"]["identity"], "irodori-compatible-v1")
             published = output / outcome.published_wav_name
             self.assertTrue(published.is_file())
+            self.assertEqual(adapter.closed, 1)
+
+    def test_writer_rejects_same_size_mutation_before_return(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).absolute()
+            request = make_request(root)
+            adapter = FakeAdapter()
+            backend = make_backend(root, adapter)
+            real_open = irodori_backend_module.open_exclusive_binary
+
+            class MutatingContext:
+                def __init__(self, inner, path: Path) -> None:
+                    self.inner = inner
+                    self.path = path
+
+                def __enter__(self):
+                    return self.inner.__enter__()
+
+                def __exit__(self, exc_type, exc, traceback):
+                    self.inner.flush()
+                    with self.path.open("r+b") as other:
+                        other.seek(44)
+                        other.write(b"\x00\x00\x00\x00")
+                        other.flush()
+                    return self.inner.__exit__(exc_type, exc, traceback)
+
+            def mutating_open(guard, path: Path):
+                return MutatingContext(real_open(guard, path), path)
+
+            with patch(
+                "neutral_tts.irodori_backend.open_exclusive_binary",
+                side_effect=mutating_open,
+            ):
+                with self.assertRaises(UnsafeDirectoryError):
+                    backend.generate(request)
+            self.assertEqual(adapter.closed, 1)
+
+    def test_application_rejects_same_size_change_after_backend_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).absolute()
+            output = root / "published"
+            recovery = root / "recovery"
+            output.mkdir()
+            recovery.mkdir()
+            adapter = FakeAdapter()
+            real_backend = make_backend(root, adapter)
+
+            class MutatingBackend:
+                backend_identity = real_backend.backend_identity
+
+                def generate(self, request: GenerationRequest):
+                    result = real_backend.generate(request)
+                    with result.staged_path.open("r+b") as staged:
+                        staged.seek(44)
+                        staged.write(b"\x00\x00\x00\x00")
+                    return result
+
+            configured = PersistedSettings(
+                filename_context=FilenameContext(
+                    date="20260909",
+                    time="120000",
+                    title="audio",
+                    voice="neutral",
+                    quality="balanced",
+                    reading="standard",
+                    job_id_short="abc123",
+                    sequence=1,
+                ),
+                plan_settings=PlanSettings(max_tokens=256, max_characters=144),
+                pause_policy=PausePolicy(Decimal("0.001"), 48_000),
+                tokenizer_identity="tokenizer-contract-v1",
+                output_directory=output,
+                staging_directory=recovery,
+            )
+            service = ApplicationService(
+                make_counter(),
+                configured,
+                backend=MutatingBackend(),
+            )
+            preview = service.preview("test")
+            with self.assertRaises(ApplicationError):
+                service.run("test", preview)
+            self.assertEqual(list(output.iterdir()), [])
             self.assertEqual(adapter.closed, 1)
 
 

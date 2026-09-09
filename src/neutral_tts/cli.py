@@ -144,6 +144,20 @@ def _text_argument(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     return value
 
 
+def _assert_supported_lifecycle_args(args: argparse.Namespace) -> None:
+    """Reject reserved lifecycle modes before any host-private operation."""
+
+    if any(
+        value is not None
+        for value in (
+            args.restore_live_data_root,
+            args.install_app_root,
+            args.install_user_data_root,
+        )
+    ):
+        raise UnsupportedLifecycleIntegrationError()
+
+
 def _build_service(
     args: argparse.Namespace,
     *,
@@ -156,15 +170,7 @@ def _build_service(
     device_class: str = "unknown-device",
     calibration: Calibration | None = None,
 ) -> ApplicationService:
-    if any(
-        value is not None
-        for value in (
-            args.restore_live_data_root,
-            args.install_app_root,
-            args.install_user_data_root,
-        )
-    ):
-        raise UnsupportedLifecycleIntegrationError()
+    _assert_supported_lifecycle_args(args)
     output = _safe_directory(args.output_dir, label="output directory")
     staging = _safe_directory(args.staging_dir, label="staging directory")
     now = datetime.now().astimezone()
@@ -255,6 +261,7 @@ def main(
     if args.command in {"preview", "demo-run", "real-run"}:
         args.text = args.text_option if args.text_option is not None else args.text
     try:
+        _assert_supported_lifecycle_args(args)
         source_text = (
             _text_argument(parser, args)
             if args.command in {"preview", "demo-run", "real-run"}
@@ -301,23 +308,19 @@ def main(
             runtime_config = _safe_private_file(
                 args.runtime_config, label="runtime configuration"
             )
+            assert source_text is not None
+            # Validate every model-free input/root/template boundary and
+            # reconcile history before the host factory gets an opportunity
+            # to import a runtime or allocate accelerator resources.
+            preflight_service = _build_service(args, history_enabled=True)
+            preflight_service.preview(source_text)
+            preflight_history = preflight_service.history_records()
             binding = real_runtime_factory(runtime_config)
             if not isinstance(binding, RealRuntimeBinding):
                 raise TypeError("runtime host returned an invalid binding")
-            history_reader = _build_service(
-                args,
-                token_counter=binding.token_counter,
-                tokenizer_identity=binding.tokenizer_identity,
-                history_enabled=True,
-                runtime_config_digest=binding.runtime_config_digest,
-                voice_rights_manifest_sha256=(
-                    binding.voice_rights_manifest_sha256
-                ),
-                device_class=binding.device_class,
-            )
             verified_history = tuple(
                 record
-                for record in history_reader.history_records()
+                for record in preflight_history
                 if (
                     record.runtime_config_digest == binding.runtime_config_digest
                     and record.voice_rights_manifest_sha256
@@ -347,7 +350,6 @@ def main(
                 device_class=binding.device_class,
                 calibration=calibration,
             )
-            assert source_text is not None
             preview = service.preview(source_text)
             outcome = service.run(source_text, preview)
             display = preview.estimate.coarse_display_payload()

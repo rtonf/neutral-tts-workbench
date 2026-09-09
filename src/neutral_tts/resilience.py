@@ -284,7 +284,13 @@ def _validate_run_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(state, str):
         raise ValueError("journal state is invalid")
     expected = _JOURNAL_KEYS_BY_STATE.get(state)
-    if expected is None or set(payload) != expected:
+    observed = set(payload)
+    history_bound = (
+        expected is not None
+        and state in {"publishing", "completed"}
+        and observed == expected | {"history_binding_sha256"}
+    )
+    if expected is None or (observed != expected and not history_bound):
         raise ValueError("journal fields do not match its state")
     if payload.get("schema_version") != "neutral-tts-run-v1":
         raise ValueError("schema mismatch")
@@ -299,6 +305,11 @@ def _validate_run_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("invalid staging directory")
     if state in {"ready", "publishing", "completed"}:
         _journal_file_fact(payload, "staged")
+    if history_bound and (
+        not isinstance(payload.get("history_binding_sha256"), str)
+        or _SHA256.fullmatch(payload["history_binding_sha256"]) is None
+    ):
+        raise ValueError("history binding evidence is invalid")
     if state in {"publishing", "completed"}:
         try:
             output_name = _safe_name(payload["output_name"])
@@ -341,6 +352,16 @@ class RunRecord:
     error: str | None = None
     published_size: int | None = None
     published_sha256: str | None = None
+    history_binding_sha256: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _ProducedArtifact:
+    """In-memory handoff from application validation to recovery hashing."""
+
+    path: Path
+    size: int
+    sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,14 +408,29 @@ class RunHandle:
             # ``Path.write_bytes`` returns an integer byte count; producer
             # callbacks commonly return that value accidentally.  Only an
             # explicit path-like result changes the declared staged path.
-            candidate = self.staging_path if result is None or not isinstance(result, (str, os.PathLike)) else Path(result)
+            expected_fact: tuple[int, str] | None = None
+            if isinstance(result, _ProducedArtifact):
+                candidate = result.path
+                expected_fact = (result.size, result.sha256)
+            else:
+                candidate = (
+                    self.staging_path
+                    if result is None or not isinstance(result, (str, os.PathLike))
+                    else Path(result)
+                )
             self.manager._assert_run_staging(self.run_id, candidate)
-            if candidate.absolute() != self.staging_path.absolute() or not candidate.is_file() or candidate.is_symlink():
+            if (
+                candidate.absolute() != self.staging_path.absolute()
+                or not candidate.is_file()
+                or candidate.is_symlink()
+            ):
                 raise RecoveryError("producer did not create the declared staged output")
             _fsync_file(candidate)
             size, digest = _file_digest(candidate)
             if size <= 0:
                 raise RecoveryError("staged output is empty")
+            if expected_fact is not None and expected_fact != (size, digest):
+                raise RecoveryError("staged output changed after application validation")
             with lock:
                 if self.manager.is_cancelled(self.run_id) or self.record.state == "cancelled":
                     raise RunCancelled("run cancelled")
@@ -415,7 +451,12 @@ class RunHandle:
                     self._transition("failed", error=f"{type(exc).__name__}: {exc}")
             raise
 
-    def publish(self, *, allow_collision_suffix: bool = True) -> Path:
+    def publish(
+        self,
+        *,
+        allow_collision_suffix: bool = True,
+        history_binding_sha256: str | None = None,
+    ) -> Path:
         """Atomically publish without replacement.
 
         Library callers retain deterministic suffix allocation by default.
@@ -424,6 +465,11 @@ class RunHandle:
         """
         lock = self.manager._run_lock(self.run_id)
         with lock:
+            if history_binding_sha256 is not None and (
+                not isinstance(history_binding_sha256, str)
+                or _SHA256.fullmatch(history_binding_sha256) is None
+            ):
+                raise RecoveryError("history binding evidence is invalid")
             if self.record.state != "ready":
                 raise RecoveryError("run is not ready for publication")
             if self.manager.is_cancelled(self.run_id):
@@ -450,12 +496,16 @@ class RunHandle:
                 if allow_collision_suffix
                 else _exact_target(self.manager.output_directory, self.record.requested_output)
             )
-            self._transition(
-                "publishing",
-                output_name=target.name,
-                staged_size=staged_size,
-                staged_sha256=staged_sha256,
-            )
+            publishing_evidence: dict[str, Any] = {
+                "output_name": target.name,
+                "staged_size": staged_size,
+                "staged_sha256": staged_sha256,
+            }
+            if history_binding_sha256 is not None:
+                publishing_evidence["history_binding_sha256"] = (
+                    history_binding_sha256
+                )
+            self._transition("publishing", **publishing_evidence)
             try:
                 # Acquiring READY -> PUBLISHING while holding the per-run lock
                 # is the linearization point.  A cancellation that returns
@@ -479,16 +529,22 @@ class RunHandle:
                 else:
                     raise RecoveryError("unable to publish without replacement")
                 size, digest = _file_digest(target)
+                if (size, digest) != (staged_size, staged_sha256):
+                    raise RecoveryError("published output differs from staged evidence")
                 _flush_directory(target.parent)
                 self.manager._fault("publication_linked")
-                self._transition(
-                    "completed",
-                    output_name=target.name,
-                    staged_size=staged_size,
-                    staged_sha256=staged_sha256,
-                    published_size=size,
-                    published_sha256=digest,
-                )
+                completed_evidence: dict[str, Any] = {
+                    "output_name": target.name,
+                    "staged_size": staged_size,
+                    "staged_sha256": staged_sha256,
+                    "published_size": size,
+                    "published_sha256": digest,
+                }
+                if self.record.history_binding_sha256 is not None:
+                    completed_evidence["history_binding_sha256"] = (
+                        self.record.history_binding_sha256
+                    )
+                self._transition("completed", **completed_evidence)
                 return target
             except Exception as exc:
                 if isinstance(exc, FaultInjected):
@@ -635,6 +691,10 @@ class RecoveryManager:
                 extra.get("error", handle.record.error),
                 extra.get("published_size", handle.record.published_size),
                 extra.get("published_sha256", handle.record.published_sha256),
+                extra.get(
+                    "history_binding_sha256",
+                    handle.record.history_binding_sha256,
+                ),
             )
             self._fault(state)
 
@@ -815,6 +875,9 @@ class RecoveryManager:
                                 journal,
                                 published_size=published_size,
                                 published_sha256=published_sha256,
+                                history_binding_sha256=payload.get(
+                                    "history_binding_sha256"
+                                ),
                             )
                         )
                         continue
@@ -845,6 +908,7 @@ class RecoveryManager:
                     payload.get("error"),
                     payload.get("published_size"),
                     payload.get("published_sha256"),
+                    payload.get("history_binding_sha256"),
                 )
                 records.append(record)
             except JournalCorrupt as exc:

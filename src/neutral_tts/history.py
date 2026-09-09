@@ -10,8 +10,11 @@ constructing a synthesis backend.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
+import stat
+import wave
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,14 +28,14 @@ from .fs_safety import (
     is_reparse,
     make_directories,
 )
-from .planning import normalize_public_id
+from .planning import MAX_SAMPLE_RATE, normalize_public_id
 from .receipts import parse_success_receipt
 from .resilience import (
     RecoveryError,
     RunRecord,
     _atomic_json,
+    _canonical,
     _decode_canonical_object,
-    _file_digest,
     _safe_name,
     _safe_run_id,
 )
@@ -54,6 +57,18 @@ _HISTORY_KEYS = {
     "created_at_utc",
     "completed_at_utc",
 }
+_HISTORY_BINDING_KEYS = (
+    "schema_version",
+    "run_id",
+    "output_basename",
+    "output_size",
+    "output_sha256",
+    "receipt",
+    "backend_identity",
+    "runtime_config_digest",
+    "voice_rights_manifest_sha256",
+    "created_at_utc",
+)
 
 
 class HistoryError(RuntimeError):
@@ -124,6 +139,8 @@ def _validated_payload(value: dict[str, Any]) -> dict[str, Any]:
         receipt, calibration_key
     ) is None:
         raise HistoryError("history receipt is invalid")
+    if receipt["actual"]["audio"]["wav_bytes"] != size:
+        raise HistoryError("history receipt output size is inconsistent")
     created, created_value = _timestamp(
         value.get("created_at_utc"), required=True
     )
@@ -152,6 +169,104 @@ def _validated_payload(value: dict[str, Any]) -> dict[str, Any]:
         "created_at_utc": created,
         "completed_at_utc": completed_at,
     }
+
+
+def _history_binding_sha256(payload: dict[str, Any]) -> str:
+    """Bind every immutable sidecar claim to recovery-owned evidence.
+
+    ``state`` and ``completed_at_utc`` are the two fields intentionally
+    changed after publication.  Every other semantic claim, including the
+    original creation instant, is fixed before the recovery journal enters
+    its publishing state.
+    """
+
+    return hashlib.sha256(
+        _canonical({key: payload[key] for key in _HISTORY_BINDING_KEYS})
+    ).hexdigest()
+
+
+def _verified_pcm16_facts(path: Path) -> tuple[int, str, int, float]:
+    """Hash and parse one stable, non-reparse mono PCM16 WAV descriptor."""
+
+    try:
+        before = path.stat()
+        linked_before = path.lstat()
+        if (
+            is_reparse(path)
+            or not stat.S_ISREG(before.st_mode)
+            or not stat.S_ISREG(linked_before.st_mode)
+        ):
+            raise HistoryError("published history output is not a regular file")
+        digest = hashlib.sha256()
+        observed_size = 0
+        with path.open("rb") as handle:
+            opened = os.fstat(handle.fileno())
+            while block := handle.read(1024 * 1024):
+                observed_size += len(block)
+                digest.update(block)
+            handle.seek(0)
+            with wave.open(handle, "rb") as wav:
+                channels = wav.getnchannels()
+                width = wav.getsampwidth()
+                rate = wav.getframerate()
+                frames = wav.getnframes()
+                compression = wav.getcomptype()
+                remaining_frames = frames
+                observed_pcm_bytes = 0
+                while remaining_frames:
+                    block_frames = min(remaining_frames, 32_768)
+                    pcm = wav.readframes(block_frames)
+                    if not pcm:
+                        break
+                    if len(pcm) % 2:
+                        raise HistoryError(
+                            "published history PCM extent is invalid"
+                        )
+                    observed_pcm_bytes += len(pcm)
+                    remaining_frames -= len(pcm) // 2
+                trailing_frame = wav.readframes(1)
+        after = path.stat()
+        linked_after = path.lstat()
+        reparse_after = is_reparse(path)
+    except HistoryError:
+        raise
+    except (EOFError, OSError, wave.Error) as exc:
+        raise HistoryError("published history output is invalid") from exc
+    identities = {
+        (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns)
+        for item in (before, opened, after)
+    }
+    if (
+        len(identities) != 1
+        or observed_size != before.st_size
+        or reparse_after
+        or (
+            linked_before.st_dev,
+            linked_before.st_ino,
+            linked_before.st_size,
+            linked_before.st_mtime_ns,
+        )
+        != (
+            linked_after.st_dev,
+            linked_after.st_ino,
+            linked_after.st_size,
+            linked_after.st_mtime_ns,
+        )
+    ):
+        raise HistoryError("published history output changed during verification")
+    if (
+        channels != 1
+        or width != 2
+        or rate <= 0
+        or rate > MAX_SAMPLE_RATE
+        or frames <= 0
+        or compression != "NONE"
+        or remaining_frames != 0
+        or observed_pcm_bytes != frames * 2
+        or trailing_frame
+    ):
+        raise HistoryError("published history output is not bounded mono PCM16")
+    return observed_size, digest.hexdigest(), rate, frames / rate
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,19 +388,19 @@ class HistoryStore:
         *,
         run_id: str,
         output_basename: str,
-        staged_path: Path,
+        output_size: int,
+        output_sha256: str,
         receipt: dict[str, Any],
         backend_identity: str,
         runtime_config_digest: str,
         voice_rights_manifest_sha256: str,
-    ) -> None:
+    ) -> str:
         path = self._path(run_id)
         self._assert_roots()
         if os.path.lexists(path):
             raise HistoryError("history run already exists")
         try:
             output_basename = _safe_name(output_basename)
-            size, output_sha256 = _file_digest(staged_path)
         except RecoveryError as exc:
             raise HistoryError("staged history evidence is invalid") from exc
         payload = _validated_payload(
@@ -294,7 +409,7 @@ class HistoryStore:
                 "run_id": run_id,
                 "state": "pending",
                 "output_basename": output_basename,
-                "output_size": size,
+                "output_size": output_size,
                 "output_sha256": output_sha256,
                 "receipt": receipt,
                 "backend_identity": backend_identity,
@@ -308,6 +423,7 @@ class HistoryStore:
             _atomic_json(path, payload, self._history_guard)
         except (OSError, FilesystemBoundaryError) as exc:
             raise HistoryError("pending history could not be made durable") from exc
+        return _history_binding_sha256(payload)
 
     @staticmethod
     def _matching_recovery(
@@ -322,6 +438,8 @@ class HistoryStore:
             or record.output_name != payload["output_basename"]
             or record.published_size != payload["output_size"]
             or record.published_sha256 != payload["output_sha256"]
+            or record.history_binding_sha256
+            != _history_binding_sha256(payload)
         ):
             raise HistoryError("recovery record does not prove publication")
         return record
@@ -331,11 +449,24 @@ class HistoryStore:
         try:
             self._assert_roots()
             assert_safe_descendant(self._output_guard, target)
-            if _file_digest(target) != (
+            size, digest, rate, duration = _verified_pcm16_facts(target)
+            if (size, digest) != (
                 payload["output_size"],
                 payload["output_sha256"],
             ):
                 raise HistoryError("published history bytes changed")
+            audio = payload["receipt"]["actual"]["audio"]
+            if (
+                audio["wav_bytes"] != size
+                or audio["sample_rate"] != rate
+                or not math.isclose(
+                    float(audio["duration_seconds"]),
+                    duration,
+                    rel_tol=1e-9,
+                    abs_tol=1e-9,
+                )
+            ):
+                raise HistoryError("history receipt audio facts changed")
         except (OSError, RecoveryError, FilesystemBoundaryError) as exc:
             raise HistoryError("published history output is invalid") from exc
         return target

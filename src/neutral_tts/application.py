@@ -34,6 +34,7 @@ from .fs_safety import (
     DirectoryGuard,
     FilesystemBoundaryError,
     assert_safe_descendant,
+    is_reparse,
 )
 from .planning import (
     DictionarySnapshot,
@@ -46,7 +47,13 @@ from .planning import (
 from .preview import PreviewResult, pre_generation_preview
 from .receipts import ActualRun, build_success_receipt
 from .history import HistoryRecord, HistoryRecovery, HistoryStore
-from .resilience import RecoveryError, RecoveryManager, RecoveryReport, _safe_run_id
+from .resilience import (
+    RecoveryError,
+    RecoveryManager,
+    RecoveryReport,
+    _ProducedArtifact,
+    _safe_run_id,
+)
 
 
 class ApplicationError(ValueError):
@@ -459,20 +466,28 @@ def _validate_staged_actual(
     actual: ActualRun,
     *,
     require_silence: bool = False,
-) -> None:
+    expected_sha256: str | None = None,
+) -> tuple[int, str]:
     """Verify adapter facts against the stable staged PCM16 WAV before publish."""
 
     if not isinstance(actual, ActualRun):
         raise ApplicationError("backend actual evidence is invalid")
+    if expected_sha256 is not None and (
+        not isinstance(expected_sha256, str)
+        or len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+    ):
+        raise ApplicationError("backend staged hash evidence is invalid")
     if (
         not isinstance(path, Path)
         or not path.is_absolute()
         or not path.is_file()
-        or path.is_symlink()
+        or is_reparse(path)
     ):
         raise ApplicationError("backend staged evidence is invalid")
     try:
         before = path.stat()
+        linked_before = path.lstat()
         with path.open("rb") as handle:
             opened = os.fstat(handle.fileno())
             facts = _parse_pcm16_wav_extent(handle, before.st_size)
@@ -493,7 +508,15 @@ def _validate_staged_actual(
                             "built-in demo output is not complete silence"
                         )
                     remaining -= len(block)
+            digest = hashlib.sha256()
+            observed_size = 0
+            handle.seek(0)
+            while block := handle.read(1024 * 1024):
+                observed_size += len(block)
+                digest.update(block)
         after = path.stat()
+        linked_after = path.lstat()
+        reparse_after = is_reparse(path)
     except ApplicationError:
         raise
     except (EOFError, OSError, struct.error, wave.Error) as exc:
@@ -502,7 +525,24 @@ def _validate_staged_actual(
         (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns)
         for item in (before, opened, after)
     }
-    if len(identities) != 1 or not stat.S_ISREG(before.st_mode):
+    if (
+        len(identities) != 1
+        or not stat.S_ISREG(before.st_mode)
+        or observed_size != before.st_size
+        or reparse_after
+        or (
+            linked_before.st_dev,
+            linked_before.st_ino,
+            linked_before.st_size,
+            linked_before.st_mtime_ns,
+        )
+        != (
+            linked_after.st_dev,
+            linked_after.st_ino,
+            linked_after.st_size,
+            linked_after.st_mtime_ns,
+        )
+    ):
         raise ApplicationError("backend staged evidence is unstable")
     if (
         (channels, width, rate, frames)
@@ -522,6 +562,10 @@ def _validate_staged_actual(
         )
     ):
         raise ApplicationError("backend actual evidence does not match staged audio")
+    observed_sha256 = digest.hexdigest()
+    if expected_sha256 is not None and observed_sha256 != expected_sha256:
+        raise ApplicationError("backend staged bytes differ from adapter evidence")
+    return observed_size, observed_sha256
 
 
 @dataclass(frozen=True, slots=True)
@@ -768,8 +812,11 @@ class GenerationRequest:
 
 @dataclass(frozen=True, slots=True)
 class BackendResult:
+    """Backend facts, optionally bound to the adapter's intended WAV bytes."""
+
     staged_path: Path
     actual: ActualRun
+    staged_sha256: str | None = None
 
 
 @runtime_checkable
@@ -1259,6 +1306,7 @@ class ApplicationService:
             and _is_builtin_demo_backend(backend)
         )
         receipt: dict[str, Any] | None = None
+        produced_artifact: _ProducedArtifact | None = None
         with self._recovery_context(
             output_directory=admission.output_directory,
             recovery_directory=admission.recovery_directory,
@@ -1299,8 +1347,8 @@ class ApplicationService:
                         "recovery staging identity is inconsistent"
                     )
 
-                def produce(staging_path: Path) -> Path:
-                    nonlocal receipt
+                def produce(staging_path: Path) -> _ProducedArtifact:
+                    nonlocal produced_artifact, receipt
                     if (
                         staging_path.absolute()
                         != admission.request.staging_path.absolute()
@@ -1316,10 +1364,11 @@ class ApplicationService:
                         raise ApplicationError(
                             "backend returned an unexpected staging result"
                         )
-                    _validate_staged_actual(
+                    staged_size, staged_sha256 = _validate_staged_actual(
                         result.staged_path,
                         result.actual,
                         require_silence=demo,
+                        expected_sha256=result.staged_sha256,
                     )
                     # A run becomes READY only after all receipt facts pass.
                     receipt = build_success_receipt(
@@ -1327,23 +1376,31 @@ class ApplicationService:
                         admission.preview.estimate,
                         result.actual,
                     )
-                    return result.staged_path
+                    produced_artifact = _ProducedArtifact(
+                        result.staged_path,
+                        staged_size,
+                        staged_sha256,
+                    )
+                    return produced_artifact
 
                 handle.produce(produce)
                 recovery.assert_unchanged()
+                history_binding_sha256: str | None = None
                 if history is not None:
                     if (
                         receipt is None
+                        or produced_artifact is None
                         or settings.runtime_config_digest is None
                         or settings.voice_rights_manifest_sha256 is None
                     ):
                         raise ApplicationError(
                             "history generation binding is incomplete"
                         )
-                    history.prepare(
+                    history_binding_sha256 = history.prepare(
                         run_id=admission.run_id,
                         output_basename=admission.request.output_basename,
-                        staged_path=handle.staging_path,
+                        output_size=produced_artifact.size,
+                        output_sha256=produced_artifact.sha256,
                         receipt=receipt,
                         backend_identity=backend_identity,
                         runtime_config_digest=settings.runtime_config_digest,
@@ -1351,7 +1408,10 @@ class ApplicationService:
                             settings.voice_rights_manifest_sha256
                         ),
                     )
-                published = handle.publish(allow_collision_suffix=False)
+                published = handle.publish(
+                    allow_collision_suffix=False,
+                    history_binding_sha256=history_binding_sha256,
+                )
                 if history is not None:
                     history.complete(
                         admission.run_id,

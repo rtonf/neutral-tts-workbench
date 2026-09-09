@@ -13,7 +13,9 @@ import wave
 from contextlib import redirect_stdout
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
+import neutral_tts.resilience as resilience_module
 from neutral_tts.application import (
     ApplicationError,
     ApplicationService,
@@ -26,6 +28,7 @@ from neutral_tts.filename_templates import FilenameContext
 from neutral_tts.history import HistoryStore
 from neutral_tts.playback import PlaybackError, WinsoundPlayback
 from neutral_tts.receipts import ActualRun
+from neutral_tts.resilience import RecoveryError
 
 
 def counter(text: str) -> int:
@@ -196,6 +199,79 @@ class HistoryPlaybackTests(unittest.TestCase):
             )
             self.assertNotIn("synthetic input", raw_history)
             self.assertNotIn(str(private_config), raw_history)
+            journal = json.loads(
+                (recovery / "journals" / f"{run_id}.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertRegex(journal["history_binding_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_real_cli_rejects_lifecycle_and_invalid_roots_before_host_factory(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).absolute()
+            private_config = root / "runtime-config"
+            private_config.write_text("{}", encoding="utf-8")
+            factory_calls: list[Path] = []
+
+            def factory(path: Path) -> RealRuntimeBinding:
+                factory_calls.append(path)
+                return RealRuntimeBinding(
+                    counter,
+                    SyntheticBackend(),
+                    "tokenizer-contract-v1",
+                    "a" * 64,
+                    "b" * 64,
+                )
+
+            output = root / "output"
+            recovery = root / "recovery"
+            lifecycle = root / "install-root"
+            code, payload = self._invoke(
+                [
+                    "real-run",
+                    "--runtime-config",
+                    str(private_config),
+                    "--text",
+                    "synthetic input",
+                    "--output-dir",
+                    str(output),
+                    "--staging-dir",
+                    str(recovery),
+                    "--install-app-root",
+                    str(lifecycle),
+                ],
+                real_runtime_factory=factory,
+            )
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                payload["error"]["code"],
+                "UNSUPPORTED_LIFECYCLE_INTEGRATION",
+            )
+            self.assertEqual(factory_calls, [])
+            self.assertFalse(output.exists())
+            self.assertFalse(recovery.exists())
+            self.assertFalse(lifecycle.exists())
+
+            invalid_output = root / "not-a-directory"
+            invalid_output.write_bytes(b"synthetic")
+            code, payload = self._invoke(
+                [
+                    "real-run",
+                    "--runtime-config",
+                    str(private_config),
+                    "--text",
+                    "synthetic input",
+                    "--output-dir",
+                    str(invalid_output),
+                    "--staging-dir",
+                    str(recovery),
+                ],
+                real_runtime_factory=factory,
+            )
+            self.assertEqual(code, 2)
+            self.assertEqual(payload["error"]["code"], "WORKFLOW_REJECTED")
+            self.assertEqual(factory_calls, [])
+            self.assertFalse(recovery.exists())
 
     def test_missing_history_binding_rejects_before_backend_generation(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -225,6 +301,40 @@ class HistoryPlaybackTests(unittest.TestCase):
         )
         self.assertEqual(binding.tokenizer_identity, "tokenizer-contract-v1")
         self.assertEqual(binding.device_class, "test-device")
+
+    def test_validated_staging_fact_is_rechecked_before_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name).absolute()
+            output = root / "output"
+            recovery = root / "recovery"
+            output.mkdir()
+            recovery.mkdir()
+            service = ApplicationService(
+                counter,
+                settings(output, recovery, write_history=True),
+                backend=SyntheticBackend(),
+            )
+            preview = service.preview("synthetic handoff input")
+            real_digest = resilience_module._file_digest
+            mutated = False
+
+            def mutate_before_recovery_hash(path: Path):
+                nonlocal mutated
+                if not mutated and path.name == "output":
+                    mutated = True
+                    with path.open("r+b") as staged:
+                        staged.seek(44)
+                        staged.write(b"\x00\x00\x00\x00")
+                return real_digest(path)
+
+            with patch(
+                "neutral_tts.resilience._file_digest",
+                side_effect=mutate_before_recovery_hash,
+            ):
+                with self.assertRaises(RecoveryError):
+                    service.run("synthetic handoff input", preview)
+            self.assertTrue(mutated)
+            self.assertEqual(list(output.iterdir()), [])
 
     def test_real_cli_uses_only_verified_key_matched_history_for_calibration(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -392,19 +502,20 @@ service.run("synthetic restart input", preview)
                 backend=SyntheticBackend(),
             )
             preview = service.preview("synthetic timestamp input")
-            outcome = service.run("synthetic timestamp input", preview)
+            with patch(
+                "neutral_tts.history._now_utc",
+                side_effect=(
+                    "2026-09-09T12:00:00Z",
+                    "2026-09-09T12:00:00.100000Z",
+                ),
+            ):
+                outcome = service.run("synthetic timestamp input", preview)
             sidecar = next((recovery / "history").glob("*.json"))
             payload = json.loads(sidecar.read_text(encoding="utf-8"))
-            payload["created_at_utc"] = "2026-09-09T12:00:00Z"
-            payload["completed_at_utc"] = "2026-09-09T12:00:00.100000Z"
-            sidecar.write_text(
-                json.dumps(
-                    payload,
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ),
-                encoding="utf-8",
+            self.assertEqual(payload["created_at_utc"], "2026-09-09T12:00:00Z")
+            self.assertEqual(
+                payload["completed_at_utc"],
+                "2026-09-09T12:00:00.100000Z",
             )
             records = service.history_records(outcome.run_id)
             self.assertEqual(len(records), 1)
@@ -412,6 +523,74 @@ service.run("synthetic restart input", preview)
                 records[0].completed_at_utc,
                 "2026-09-09T12:00:00.100000Z",
             )
+
+    def test_semantic_sidecar_tampering_is_quarantined(self) -> None:
+        def change_receipt_size(payload: dict[str, object]) -> None:
+            payload["receipt"]["actual"]["audio"]["wav_bytes"] += 2
+
+        mutations = (
+            ("receipt-size", change_receipt_size),
+            (
+                "receipt-duration",
+                lambda payload: payload["receipt"]["actual"]["audio"].__setitem__(
+                    "duration_seconds", 1.0
+                ),
+            ),
+            (
+                "backend",
+                lambda payload: payload.__setitem__(
+                    "backend_identity", "forged-backend-v1"
+                ),
+            ),
+            (
+                "runtime",
+                lambda payload: payload.__setitem__(
+                    "runtime_config_digest", "c" * 64
+                ),
+            ),
+            (
+                "rights",
+                lambda payload: payload.__setitem__(
+                    "voice_rights_manifest_sha256", "d" * 64
+                ),
+            ),
+        )
+        for label, mutate in mutations:
+            with self.subTest(field=label), tempfile.TemporaryDirectory() as name:
+                root = Path(name).absolute()
+                output = root / "output"
+                recovery = root / "recovery"
+                output.mkdir()
+                recovery.mkdir()
+                service = ApplicationService(
+                    counter,
+                    settings(output, recovery, write_history=True),
+                    backend=SyntheticBackend(),
+                )
+                preview = service.preview("synthetic sidecar integrity input")
+                outcome = service.run("synthetic sidecar integrity input", preview)
+                published = output / outcome.published_wav_name
+                expected_wav = published.read_bytes()
+                sidecar = next((recovery / "history").glob("*.json"))
+                payload = json.loads(sidecar.read_text(encoding="utf-8"))
+                mutate(payload)
+                sidecar.write_text(
+                    json.dumps(
+                        payload,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    encoding="utf-8",
+                )
+
+                self.assertEqual(service.history_records(outcome.run_id), ())
+                self.assertFalse(sidecar.exists())
+                self.assertEqual(published.read_bytes(), expected_wav)
+                self.assertEqual(
+                    len(list((recovery / "quarantine").glob("history-*.json"))),
+                    1,
+                )
 
     def test_tampered_output_is_neither_listed_nor_played(self) -> None:
         with tempfile.TemporaryDirectory() as name:

@@ -54,23 +54,30 @@ The workflow is:
    in `GenerationRequest` and
    returns `BackendResult` plus `ActualRun` facts. The request necessarily holds
    the raw plan for a host-approved adapter; it is internal-only and must
-   never be serialized or logged.
+   never be serialized or logged. A backend that can prove the exact bytes it
+   intended to emit also returns their SHA-256 in `BackendResult`.
 7. Before the durable `ready` transition, the service checks the staged artifact
    is stable mono PCM16 WAV data. The RIFF extent and every chunk extent must fit
    the exact file, the data extent must be non-empty and frame-aligned, and the
    sample rate must be no greater than 768,000 Hz. It verifies sample rate,
-   duration, and byte count against the backend's actual facts and constructs
-   the strict receipt, which rejects plan-count drift.
+   duration, byte count, and any backend-supplied intended-byte SHA-256 against
+   one stable descriptor read and constructs the strict receipt, which rejects
+   plan-count drift. Recovery hashes the file again before `ready` and rejects
+   a change from the application-validated size/SHA-256 handoff.
 8. With history enabled, the service first writes a canonical `pending`
    sidecar containing the source-free receipt, public backend identity, staged
    size/SHA-256, and hashes of the host's runtime configuration and voice-rights
-   manifest. Publication then creates a same-filesystem hard link with atomic
-   no-replace semantics at the exact output name bound at admission. A newly
-   occupied name rejects the run instead of selecting another suffix after
-   admission. The recovery journal's durable `completed` transition records
-   matching staged and published size/SHA-256 evidence. Only then can history
-   become `completed`. A later startup can finish that second phase after
-   process loss without constructing a backend.
+   manifest. A SHA-256 over every immutable sidecar claim is recorded in the
+   recovery journal before publication. Publication then creates a
+   same-filesystem hard link with atomic no-replace semantics at the exact
+   output name bound at admission. A newly occupied name rejects the run
+   instead of selecting another suffix after admission. The recovery journal's
+   durable `completed` transition records the sidecar binding and matching
+   staged and published size/SHA-256 evidence; the linked target is rehashed
+   before that transition. Only then can history become `completed`. History
+   also reparses the published WAV and checks its byte count, sample rate, and
+   frame-derived duration against the receipt. A later startup can finish that
+   second phase after process loss without constructing a backend.
    `ApplicationOutcome.feedback_payload()` exposes actual-versus-estimate
    receipt feedback without source text or paths.
 
@@ -111,8 +118,10 @@ host's reference lease through sampling, accepts only the bounded `balanced` /
 result, non-mono or non-finite sample data, out-of-range samples, and a chunk
 longer than 30 seconds. Accepted chunks are converted to PCM16, separated by
 the exact admitted boundary pause, and written once to the application-owned
-staging path. Runtime cleanup runs on success, ordinary failure, and
-interruption.
+staging path. The writer hashes the deterministic WAV header, PCM, and pauses
+as they are emitted, verifies the closed staging file has the same bytes, and
+returns that digest for the application/recovery handoff. Runtime cleanup runs
+on success, ordinary failure, and interruption.
 
 The command parser exposes `real-run`, while construction remains an explicit
 host boundary: a wrapper calls `neutral_tts.cli.main(...,
@@ -120,7 +129,12 @@ real_runtime_factory=...)` and returns a `RealRuntimeBinding`. The binding
 contains only a tokenizer callback, backend object, bounded public identities,
 and SHA-256 bindings for machine-local runtime configuration and voice-rights
 evidence. The console entry point has no implicit plugin loader or arbitrary
-module runner and rejects `real-run` when no host factory is supplied.
+module runner and rejects `real-run` when no host factory is supplied. Before
+calling that factory, `real-run` rejects reserved lifecycle arguments, checks
+the private configuration file boundary, performs a model-free preview/root
+preflight, and reconciles existing recovery/history state. A rejected root,
+template, source, or lifecycle configuration therefore cannot cause runtime
+construction.
 
 Successful hosted runs create verified history. The `startup`, `history`, and
 `play` commands require no runtime factory and do not tokenize or invoke a
@@ -136,6 +150,13 @@ construction remain responsibilities of the machine-local host and the
 separate distribution gates in `docs/RELEASE_NO_GO.md`. Repository tests use
 fake adapter objects and synthetic PCM only; they are not real-model execution,
 voice quality, consent, or redistribution evidence.
+
+The output and recovery roots are an owner-private local trust boundary. The
+guards and hash chain detect pathname, byte, and evidence drift between stages;
+they do not make files immutable against a different process that already has
+authority to rewrite every file as the same operating-system account. A host
+must apply account-appropriate ACLs and must not share these roots with an
+untrusted writer.
 
 ## Explicit demo adapter
 
