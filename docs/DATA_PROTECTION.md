@@ -19,12 +19,13 @@ aggregate counts, and the success receipt agree. Startup recovery verifies or
 reconciles durable evidence without invoking the backend or creating a second
 publication.
 
-Generation startup uses the configured recovery root. Restore startup uses an
-explicit live-data root, and install lifecycle startup uses an explicit
-application/user-data root pair. All configured operational roots must be
-physically distinct and non-nested; alternate path spellings do not bypass this
-boundary. Startup, preview, and admission bind the required physical identities
-so replacement before use fails closed. Roots are never discovered or swept.
+Application startup uses only the configured generation recovery root and
+output root. They must be physically distinct and non-nested; alternate path
+spellings do not bypass this boundary. Startup, preview, and admission bind
+their physical identities so replacement before use fails closed. Configuring
+a restore or install lifecycle root on this host is rejected before generation
+roots are inspected, created, locked, or reconciled. Roots are never discovered
+or swept.
 
 A backup is a versioned ZIP with a manifest and SHA-256 hash for every file. It
 covers settings, history, dictionary data, and approved generic voice-profile
@@ -43,11 +44,12 @@ not move, migrate, or erase the separate user-data root. Uninstall relocates
 only files listed in the owned-files manifest; unknown files and user data are
 left in place. Recovery and uninstall copies are retained rather than silently
 discarded. Install, update, explicit rollback, and uninstall also write a
-flushed lifecycle journal. `reconcile_install_lifecycle()` must run during
-startup before the application root is used; every lifecycle entry point calls
-it automatically before beginning a new transition. The reconciler and every
-mutation run under one operating-system process lock. A live owner blocks a
-second process, while process termination releases the claim for recovery.
+flushed lifecycle journal. A dedicated lifecycle host must run
+`reconcile_install_lifecycle()` before the application root is used; every
+public lifecycle entry point calls it automatically before beginning a new
+transition. The reconciler and every mutation run under one operating-system
+process lock. A live owner blocks a second process, while process termination
+releases the claim for recovery.
 The owned implementation also verifies the live lock handle, application root,
 and operation before it reads a lifecycle journal or changes lifecycle state.
 

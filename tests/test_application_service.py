@@ -16,6 +16,7 @@ from neutral_tts.application import (
     DigestMismatchError,
     PersistedSettings,
     StalePreviewError,
+    UnsupportedLifecycleIntegrationError,
     UnsafeDirectoryError,
 )
 from neutral_tts.demo_backend import DEMO_SILENCE_ONLY
@@ -24,6 +25,23 @@ from neutral_tts.resilience import RecoveryError, RunCancelled
 
 
 class ApplicationServiceTests(unittest.TestCase):
+    @staticmethod
+    def snapshot_tree(
+        root: Path,
+    ) -> tuple[tuple[str, ...], tuple[tuple[str, bytes], ...]]:
+        paths = tuple(root.rglob("*"))
+        directories = tuple(
+            sorted(path.relative_to(root).as_posix() for path in paths if path.is_dir())
+        )
+        files = tuple(
+            sorted(
+                (path.relative_to(root).as_posix(), path.read_bytes())
+                for path in paths
+                if path.is_file()
+            )
+        )
+        return directories, files
+
     def make_service(self, root: Path) -> ApplicationService:
         output, staging = root / "output", root / "staging"
         output.mkdir()
@@ -292,42 +310,74 @@ class ApplicationServiceTests(unittest.TestCase):
             self.assertEqual(startup.status, "RECOVERED")
             self.assertEqual(startup.quarantined_runs, 1)
 
-    def test_preview_is_non_mutating_and_startup_uses_only_configured_roots(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            service = self.make_service(root)
-            restore = root / "live-data"
-            install_app = root / "installed-app"
-            install_user = root / "installed-user-data"
-            service._settings = replace(
-                service._settings,
-                restore_live_data_root=restore,
-                install_app_root=install_app,
-                install_user_data_root=install_user,
-            )
-            before = sorted(path.relative_to(root) for path in root.rglob("*"))
-            with (
-                mock.patch.object(service.backend, "generate") as backend_call,
-                mock.patch("neutral_tts.application.reconcile_restore", return_value=True) as restore_call,
-                mock.patch(
-                    "neutral_tts.application.reconcile_install_lifecycle",
-                    return_value=True,
-                ) as install_call,
-            ):
-                service.preview("one")
-                self.assertEqual(before, sorted(path.relative_to(root) for path in root.rglob("*")))
-                restore_call.assert_not_called()
-                install_call.assert_not_called()
-                backend_call.assert_not_called()
+    def test_optional_lifecycle_settings_reject_before_application_side_effects(self):
+        for configuration in (
+            "restore",
+            "install-pair",
+            "install-app-only",
+            "install-user-only",
+        ):
+            for entry in ("preview", "startup", "run"):
+                with (
+                    self.subTest(configuration=configuration, entry=entry),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    root = Path(temporary)
+                    service = self.make_service(root)
+                    approved_preview = service.preview("one")
+                    target = root / "lifecycle-target"
+                    external = root / "external-data"
+                    target.mkdir()
+                    external.mkdir()
+                    restore_journal = root / ".lifecycle-target.restore-journal.json"
+                    install_journal = root / ".lifecycle-target.install-journal.json"
+                    restore_journal.write_bytes(b"existing-restore-journal")
+                    install_journal.write_bytes(b"existing-install-journal")
+                    (external / "marker").write_bytes(b"external-unchanged")
+                    configured: dict[str, Path] = {}
+                    if configuration == "restore":
+                        configured["restore_live_data_root"] = target
+                    elif configuration == "install-pair":
+                        configured["install_app_root"] = target
+                        configured["install_user_data_root"] = external
+                    elif configuration == "install-app-only":
+                        configured["install_app_root"] = target
+                    else:
+                        configured["install_user_data_root"] = external
+                    service._settings = replace(service._settings, **configured)
+                    before = self.snapshot_tree(root)
 
-                startup = service.startup()
+                    with mock.patch.object(
+                        service.backend,
+                        "generate",
+                        wraps=service.backend.generate,
+                    ) as backend_call:
+                        with self.assertRaises(
+                            UnsupportedLifecycleIntegrationError
+                        ) as rejected:
+                            if entry == "preview":
+                                service.preview("one")
+                            elif entry == "startup":
+                                service.startup()
+                            else:
+                                service.run("one", approved_preview)
 
-            restore_call.assert_called_once_with(restore)
-            install_call.assert_called_once_with(install_app, install_user)
-            backend_call.assert_not_called()
-            self.assertTrue(startup.restore_reconciled)
-            self.assertTrue(startup.install_reconciled)
-            self.assertFalse(startup.public_payload()["backend_invoked"])
+                    self.assertEqual(
+                        str(rejected.exception),
+                        "Automatic restore/install lifecycle integration "
+                        "is not supported by this application host.",
+                    )
+                    backend_call.assert_not_called()
+                    self.assertEqual(self.snapshot_tree(root), before)
+                    self.assertEqual(
+                        restore_journal.read_bytes(), b"existing-restore-journal"
+                    )
+                    self.assertEqual(
+                        install_journal.read_bytes(), b"existing-install-journal"
+                    )
+                    self.assertEqual(
+                        (external / "marker").read_bytes(), b"external-unchanged"
+                    )
 
     def test_startup_binds_output_and_recovery_before_owner_acquisition(self):
         for role in ("output", "staging"):
@@ -374,7 +424,7 @@ class ApplicationServiceTests(unittest.TestCase):
                 service.run("one", preview)
             self.assertFalse(list(output.iterdir()))
 
-    def test_configured_roots_must_not_overlap(self):
+    def test_unsupported_lifecycle_rejects_before_root_overlap_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             service = self.make_service(root)
@@ -385,8 +435,15 @@ class ApplicationServiceTests(unittest.TestCase):
                 restore_live_data_root=nested_restore,
             )
 
-            with self.assertRaises(UnsafeDirectoryError):
-                service.preview("one")
+            with mock.patch.object(
+                service,
+                "_operational_roots",
+                wraps=service._operational_roots,
+            ) as root_snapshot:
+                with self.assertRaises(UnsupportedLifecycleIntegrationError):
+                    service.preview("one")
+
+            root_snapshot.assert_not_called()
 
     @unittest.skipUnless(os.name == "nt", "Windows filesystem alias check")
     def test_physical_alias_cannot_make_output_and_recovery_the_same_root(self):
@@ -415,33 +472,6 @@ class ApplicationServiceTests(unittest.TestCase):
 
             with self.assertRaises(UnsafeDirectoryError):
                 service.startup()
-
-    def test_startup_accepts_explicit_restore_and_install_roots(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            service = self.make_service(root)
-            restore = root / "live-data"
-            install_app = root / "installed-app"
-            install_user = root / "installed-user-data"
-            untouched = root / "unconfigured"
-            for directory in (restore, install_app, install_user, untouched):
-                directory.mkdir()
-            marker = untouched / "marker"
-            marker.write_bytes(b"keep")
-            service._settings = replace(
-                service._settings,
-                restore_live_data_root=restore,
-                install_app_root=install_app,
-                install_user_data_root=install_user,
-            )
-
-            startup = service.startup()
-
-            self.assertTrue(startup.restore_configured)
-            self.assertTrue(startup.install_configured)
-            self.assertFalse(startup.restore_reconciled)
-            self.assertFalse(startup.install_reconciled)
-            self.assertEqual(marker.read_bytes(), b"keep")
 
     def test_reparse_directory_is_rejected_when_supported(self):
         with tempfile.TemporaryDirectory() as temporary:

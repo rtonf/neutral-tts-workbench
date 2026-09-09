@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
-from .backup_restore import reconcile_restore
 from .estimation import Calibration, GenerationEstimate
 from .filename_templates import (
     DEFAULT_TEMPLATE,
@@ -35,7 +34,6 @@ from .fs_safety import (
     FilesystemBoundaryError,
     assert_safe_descendant,
 )
-from .install_contract import reconcile_install_lifecycle
 from .planning import (
     DictionarySnapshot,
     MAX_SAMPLE_RATE,
@@ -71,6 +69,19 @@ class UnsafeDirectoryError(ApplicationError):
 
 class ApplicationBusyError(ApplicationError):
     """Another normal application startup or generation currently owns recovery."""
+
+
+_UNSUPPORTED_LIFECYCLE_INTEGRATION_MESSAGE = (
+    "Automatic restore/install lifecycle integration is not supported "
+    "by this application host."
+)
+
+
+class UnsupportedLifecycleIntegrationError(ApplicationError):
+    """The application host is limited to generation recovery roots."""
+
+    def __init__(self) -> None:
+        super().__init__(_UNSUPPORTED_LIFECYCLE_INTEGRATION_MESSAGE)
 
 
 def _sha256_payload(value: object) -> str:
@@ -490,7 +501,8 @@ class PersistedSettings:
 
     Paths are operational configuration and are never included in public
     payloads.  ``filename_context`` is already sanitized by the filename
-    contract when rendered.
+    contract when rendered. Lifecycle-root fields are reserved for a separate
+    host and are rejected by ``ApplicationService``.
     """
 
     template: str = DEFAULT_TEMPLATE
@@ -872,7 +884,7 @@ class ApplicationOutcome:
 
 
 class ApplicationService:
-    """Connect settings, pure preview, admission, backend, and publication."""
+    """Connect settings, generation recovery, admission, and publication."""
 
     def __init__(
         self,
@@ -903,12 +915,17 @@ class ApplicationService:
             value = source
         if not isinstance(value, PersistedSettings):
             raise TypeError("settings store must return PersistedSettings")
+        if any(
+            root is not None
+            for root in (
+                value.restore_live_data_root,
+                value.install_app_root,
+                value.install_user_data_root,
+            )
+        ):
+            raise UnsupportedLifecycleIntegrationError()
         if value.filename_context is None:
             raise ApplicationError("filename context is required")
-        if (value.install_app_root is None) != (value.install_user_data_root is None):
-            raise ApplicationError(
-                "install application and user-data roots must be configured together"
-            )
         return value
 
     @staticmethod
@@ -920,30 +937,14 @@ class ApplicationService:
         return _snapshot_operational_roots(settings, require_core=require_core)
 
     @staticmethod
-    def _reconcile_owned(
-        manager: RecoveryManager,
-        *,
-        restore_live_data_root: Path | None,
-        install_app_root: Path | None,
-        install_user_data_root: Path | None,
-    ) -> StartupRecovery:
+    def _reconcile_owned(manager: RecoveryManager) -> StartupRecovery:
         report = manager.reconcile_report()
-        restore_reconciled = (
-            reconcile_restore(restore_live_data_root)
-            if restore_live_data_root is not None
-            else False
-        )
-        install_reconciled = (
-            reconcile_install_lifecycle(install_app_root, install_user_data_root)
-            if install_app_root is not None and install_user_data_root is not None
-            else False
-        )
         return StartupRecovery.from_report(
             report,
-            restore_configured=restore_live_data_root is not None,
-            restore_reconciled=restore_reconciled,
-            install_configured=install_app_root is not None,
-            install_reconciled=install_reconciled,
+            restore_configured=False,
+            restore_reconciled=False,
+            install_configured=False,
+            install_reconciled=False,
         )
 
     @contextmanager
@@ -955,18 +956,12 @@ class ApplicationService:
         expected_output_identity: _DirectoryIdentity,
         expected_recovery_identity: _DirectoryIdentity,
         expected_root_digest: str,
-        restore_live_data_root: Path | None,
-        install_app_root: Path | None,
-        install_user_data_root: Path | None,
     ) -> Iterator[_OwnedRecovery]:
-        """Acquire, reconcile, and release one identity-bound recovery scope."""
+        """Acquire, reconcile, and release generation recovery resources."""
 
         bound_settings = PersistedSettings(
             output_directory=output_directory,
             staging_directory=recovery_directory,
-            restore_live_data_root=restore_live_data_root,
-            install_app_root=install_app_root,
-            install_user_data_root=install_user_data_root,
         )
         with _RecoveryOwner(
             recovery_directory,
@@ -984,12 +979,7 @@ class ApplicationService:
                     try:
                         owner.assert_unchanged()
                         output_guard.assert_unchanged()
-                        startup_recovery = self._reconcile_owned(
-                            manager,
-                            restore_live_data_root=restore_live_data_root,
-                            install_app_root=install_app_root,
-                            install_user_data_root=install_user_data_root,
-                        )
+                        startup_recovery = self._reconcile_owned(manager)
                         recovery = _OwnedRecovery(
                             manager,
                             startup_recovery,
@@ -1014,9 +1004,6 @@ class ApplicationService:
             expected_output_identity=roots.identity("output"),
             expected_recovery_identity=roots.identity("recovery"),
             expected_root_digest=roots.identity_digest,
-            restore_live_data_root=roots.restore,
-            install_app_root=roots.install_app,
-            install_user_data_root=roots.install_user,
         ) as recovery:
             return recovery.startup_recovery
 
@@ -1108,9 +1095,6 @@ class ApplicationService:
             root_identity_digest=roots.identity_digest,
             output_identity=roots.identity("output"),
             recovery_identity=roots.identity("recovery"),
-            restore_live_data_root=roots.restore,
-            install_app_root=roots.install_app,
-            install_user_data_root=roots.install_user,
         )
 
     def run(self, source_text: str, preview: ApplicationPreview) -> ApplicationOutcome:
@@ -1135,9 +1119,6 @@ class ApplicationService:
             expected_output_identity=admission.output_identity,
             expected_recovery_identity=admission.recovery_identity,
             expected_root_digest=admission.root_identity_digest,
-            restore_live_data_root=admission.restore_live_data_root,
-            install_app_root=admission.install_app_root,
-            install_user_data_root=admission.install_user_data_root,
         ) as recovery:
             startup_recovery = recovery.startup_recovery
             # Startup reconciliation and lock acquisition can change the
@@ -1234,6 +1215,7 @@ __all__ = [
     "SettingsStore",
     "StalePreviewError",
     "StartupRecovery",
+    "UnsupportedLifecycleIntegrationError",
     "UnsafeDirectoryError",
     "demo_silence_only_backend",
 ]

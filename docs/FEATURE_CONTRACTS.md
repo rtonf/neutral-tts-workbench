@@ -102,18 +102,17 @@ forged receipt-like dictionaries are rejected rather than used as history.
 `ApplicationService` is the framework-neutral boundary between persisted
 settings, preview, backend authorization, safe publication, and receipt
 feedback. Admission recomputes the pure preview and binds source/settings,
-plan, estimate, collision-resolved filename, and the physical identities of all
-configured operational roots. Different path spellings, including filesystem
-aliases, cannot make output, recovery, restore, or install roots equal or
-nested. Any drift rejects the request before backend use.
+plan, estimate, collision-resolved filename, and the physical identities of the
+generation output and recovery roots. Different path spellings, including
+filesystem aliases, cannot make those roots equal or nested. Any drift rejects
+the request before backend use.
 The final collision selection must still equal the previewed candidate; it may
 not silently move to a suffix after the user approved a preview.
 
 `preview()` itself performs no startup reconciliation and creates no recovery
-files. It may read physical identities for explicitly configured roots and the
-output directory to select the collision candidate. The ordinary CLI `preview`
-command is also a startup entry: it reconciles first and then calls the pure
-preview method.
+files. It may read the generation-root identities and the output directory to
+select the collision candidate. The ordinary CLI `preview` command is also a
+startup entry: it reconciles first and then calls the pure preview method.
 
 The backend receives the immutable internal text plan and one fresh private
 staging pathname. Raw plan text is necessary for an eventual approved adapter,
@@ -128,13 +127,18 @@ construction complete before the run reaches the durable `ready` state.
 
 `startup()` and `run()` use one shared identity-bound recovery context. It binds
 the preflight recovery identity to the operating-system owner, holds the output
-directory guard, and verifies the complete configured-root snapshot before
-reconciliation. It reconciles the configured generation root and only the
-explicitly supplied restore live-data and install application/user-data roots.
-`run()` retains the context through durable completion. Startup recovery never
-invokes the generation backend. Its public status is separate from the
-`NEW_GENERATION` result, and a competing ordinary startup is rejected while the
-owner is live.
+directory guard, and verifies the generation-root snapshot before
+reconciliation. It reconciles generation state only, and `run()` retains the
+context through durable completion. Startup recovery never invokes the
+generation backend. Its public status is separate from the `NEW_GENERATION`
+result, and a competing ordinary startup is rejected while the owner is live.
+
+Restore and install lifecycle integration is a separate hosting boundary.
+Supplying any corresponding root field to `ApplicationService`, or any reserved
+lifecycle-root option to the ordinary CLI, returns an explicit unsupported
+configuration error before generation roots are inspected, created, locked, or
+reconciled. The standalone backup/restore and install APIs retain their own
+contracts below.
 
 The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
 It writes silence, not speech, and its code and JSON output must always say so.

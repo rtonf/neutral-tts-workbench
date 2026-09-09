@@ -17,6 +17,7 @@ from .application import (
     SettingsStore,
     StalePreviewError,
     StartupRecovery,
+    UnsupportedLifecycleIntegrationError,
     UnsafeDirectoryError,
 )
 from .chunk_planner import ChunkEvidence, ChunkPlanningError, plan_chunks
@@ -158,6 +159,7 @@ __all__ = [
     "StalePreviewError",
     "StartupRecovery",
     "TextPlan",
+    "UnsupportedLifecycleIntegrationError",
     "UnsafeDirectoryError",
     "build_success_receipt",
     "build_release_candidate",

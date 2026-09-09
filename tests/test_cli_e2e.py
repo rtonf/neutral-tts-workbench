@@ -13,6 +13,23 @@ from neutral_tts.cli import DEMO_TOKENIZER_IDENTITY, main
 
 
 class CliE2ETests(unittest.TestCase):
+    @staticmethod
+    def snapshot_tree(
+        root: Path,
+    ) -> tuple[tuple[str, ...], tuple[tuple[str, bytes], ...]]:
+        paths = tuple(root.rglob("*"))
+        directories = tuple(
+            sorted(path.relative_to(root).as_posix() for path in paths if path.is_dir())
+        )
+        files = tuple(
+            sorted(
+                (path.relative_to(root).as_posix(), path.read_bytes())
+                for path in paths
+                if path.is_file()
+            )
+        )
+        return directories, files
+
     def invoke(self, args: list[str]) -> tuple[int, dict[str, object]]:
         output = io.StringIO()
         with redirect_stdout(output):
@@ -84,6 +101,81 @@ class CliE2ETests(unittest.TestCase):
                 retry_code, retry_payload = self.invoke(["preview", *args])
                 self.assertEqual(retry_code, 0)
                 self.assertEqual(retry_payload["status"], "READY")
+
+    def test_optional_lifecycle_options_reject_before_cli_side_effects(self):
+        for command in ("preview", "demo-run"):
+            for configuration, lifecycle_args in (
+                ("restore", ("--restore-live-data-root", "{target}")),
+                (
+                    "install-pair",
+                    (
+                        "--install-app-root",
+                        "{target}",
+                        "--install-user-data-root",
+                        "{external}",
+                    ),
+                ),
+                ("install-app-only", ("--install-app-root", "{target}")),
+                ("install-user-only", ("--install-user-data-root", "{external}")),
+            ):
+                with (
+                    self.subTest(command=command, configuration=configuration),
+                    tempfile.TemporaryDirectory() as temporary,
+                ):
+                    root = Path(temporary)
+                    target = root / "lifecycle-target"
+                    external = root / "external-data"
+                    target.mkdir()
+                    external.mkdir()
+                    restore_journal = root / ".lifecycle-target.restore-journal.json"
+                    install_journal = root / ".lifecycle-target.install-journal.json"
+                    restore_journal.write_bytes(b"existing-restore-journal")
+                    install_journal.write_bytes(b"existing-install-journal")
+                    (external / "marker").write_bytes(b"external-unchanged")
+                    rendered_lifecycle_args = [
+                        value.format(target=target, external=external)
+                        for value in lifecycle_args
+                    ]
+                    output = root / "new-output"
+                    staging = root / "new-staging"
+                    args = [
+                        command,
+                        "--text",
+                        "synthetic input",
+                        "--output-dir",
+                        str(output),
+                        "--staging-dir",
+                        str(staging),
+                        *rendered_lifecycle_args,
+                    ]
+                    before = self.snapshot_tree(root)
+
+                    code, payload = self.invoke(args)
+
+                    self.assertEqual(code, 2)
+                    self.assertEqual(payload["status"], "ERROR")
+                    self.assertEqual(
+                        payload["error"],
+                        {
+                            "code": "UNSUPPORTED_LIFECYCLE_INTEGRATION",
+                            "message": (
+                                "Automatic restore/install lifecycle integration "
+                                "is not supported by this application host."
+                            ),
+                        },
+                    )
+                    self.assertEqual(self.snapshot_tree(root), before)
+                    self.assertFalse(output.exists())
+                    self.assertFalse(staging.exists())
+                    self.assertEqual(
+                        restore_journal.read_bytes(), b"existing-restore-journal"
+                    )
+                    self.assertEqual(
+                        install_journal.read_bytes(), b"existing-install-journal"
+                    )
+                    self.assertEqual(
+                        (external / "marker").read_bytes(), b"external-unchanged"
+                    )
 
     def test_error_payload_uses_fixed_privacy_safe_message(self):
         drive_path = "C:" + "/secret/path.wav"

@@ -10,8 +10,8 @@ The workflow is:
 
 1. Load one settings snapshot containing the filename context, plan and pause
    settings, tokenizer identity, calibration, output directory, and generation
-   recovery root. A restore live-data root and an install application/user-data
-   root pair are optional and are used only when explicitly configured.
+   recovery root. This application host owns generation recovery only. Restore
+   and install lifecycle operations use their separate low-level contracts.
 2. Call `preview(source_text)`. The service builds one deterministic text plan,
    estimate, rendered filename, and collision-resolved candidate. This method
    only reads settings, configured root identities, and the output directory's
@@ -25,17 +25,15 @@ The workflow is:
    admission before execution. Admission recomputes the plan and estimate,
    verifies every digest and settings binding, and rejects source, settings,
    tokenizer, calibration, physical directory identity, root overlap, or
-   filename collision drift. Output, recovery, restore, and install roots must
-   be physically separate even when different path spellings identify the same
-   directory.
+   filename collision drift. Output and recovery roots must be physically
+   separate even when different path spellings identify the same directory.
 5. `startup()` and `run()` enter the same identity-bound recovery context. It
    gives the preflight recovery identity to the operating-system owner, holds a
-   guard for the admitted output directory, and revalidates the configured-root
-   digest before reconciliation. It reconciles generation journals and the
-   explicitly configured restore/install roots. `startup()` then exits;
-   `run()` retains the same context through generation and publication. Every
-   normal return or exception releases the context, and process termination
-   releases the OS claim for the next startup.
+   guard for the admitted output directory, and revalidates the generation-root
+   digest before reconciliation. It reconciles generation journals only.
+   `startup()` then exits; `run()` retains the same context through generation
+   and publication. Every normal return or exception releases the context, and
+   process termination releases the OS claim for the next startup.
 6. The recovery manager creates a durable `prepared` journal and a private
    per-run staging directory. A backend writes exactly the private staging path
    in `GenerationRequest` and
@@ -64,6 +62,12 @@ begins. Public JSON distinguishes `STARTUP_RECOVERY` from `NEW_GENERATION` and
 states `backend_invoked: false` for startup recovery. Completed WAV files are
 verified and retained; incomplete, failed, cancelled, malformed, and orphan run
 state is moved to quarantine.
+
+`PersistedSettings` retains fields for separately hosted restore and install
+lifecycle integration. Supplying any of those fields to `ApplicationService`
+raises `UnsupportedLifecycleIntegrationError` before an output or recovery root
+is inspected, created, locked, or reconciled. The standalone backup/restore and
+install APIs remain available under their dedicated ownership contracts.
 
 ## Explicit demo adapter
 
@@ -102,9 +106,9 @@ python -m neutral_tts.cli demo-run `
 ```
 
 Here `--staging-dir` is the application-owned generation recovery root. The
-CLI also accepts `--restore-live-data-root` and the paired
-`--install-app-root` / `--install-user-data-root` options. Only supplied roots
-are reconciled; the CLI does not discover or sweep other directories.
+CLI reserves `--restore-live-data-root`, `--install-app-root`, and
+`--install-user-data-root` for a separate lifecycle host. Supplying any of them
+returns `UNSUPPORTED_LIFECYCLE_INTEGRATION` before output or staging setup.
 
 After installation, the same commands are available through the
 `neutral-tts` console entry point. The CLI emits deterministic JSON shapes and
