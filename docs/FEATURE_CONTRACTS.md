@@ -38,15 +38,18 @@ extent, or an out-of-contract sample rate is not a valid staged output.
 
 Dictionary application, neutral normalization, exact tokenizer counting,
 token-budget chunking, quality/reading settings, and the inter-chunk pause
-policy form one immutable plan. Estimation and a future approved generator must
-receive that same plan. A character heuristic must never be labelled as the
-authoritative tokenizer plan.
+policy form one immutable plan. Estimation and every generator receive that
+same plan. A character heuristic must never be labelled as the authoritative
+tokenizer plan.
 
-The current source core receives a tokenizer callback from its caller. It does
-not import an inference runtime, initialize a GPU, load model weights, or invoke
-a sampler. A future adapter must construct the exact pinned tokenizer without
-constructing the inference runtime, and generation must reject tokenizer/plan
-drift before any sampler authorization.
+The source core receives a tokenizer callback from its caller. It does not
+import an inference runtime, initialize a GPU, load model weights, or invoke a
+sampler. The optional compatible counter lazily constructs a host-selected
+local tokenizer, checks its expected vocabulary and BOS identity, and does not
+construct the inference runtime. Exact asset-manifest verification remains a
+host responsibility. The optional compatible backend repeats every chunk count
+through the runtime tokenizer and rejects tokenizer/plan drift before any
+sampler call.
 
 ## Estimate semantics
 
@@ -70,7 +73,9 @@ Calibration confidence has three states:
 - `low_sample`: fewer than the documented threshold of matching successful
   receipts; ranges are deliberately widened;
 - `calibrated`: enough matching, valid receipts exist for the same device,
-  quality, reading, and tokenizer identity.
+  quality, reading, and tokenizer identity. Hosted real runs additionally
+  select only history with the same private runtime-configuration and
+  voice-rights-manifest hashes before applying this public four-part key.
 
 Displayed ranges are rounded outward. They are planning aids, not countdowns or
 completion guarantees.
@@ -97,7 +102,7 @@ the exact receipt schema and exact plan, estimate, and actual aggregate shapes;
 their digests, keys, and counts must agree. Unknown fields and incomplete or
 forged receipt-like dictionaries are rejected rather than used as history.
 
-## Application admission and demo contract
+## Application admission, compatible backend, and demo contract
 
 `ApplicationService` is the framework-neutral boundary between persisted
 settings, preview, backend authorization, safe publication, and receipt
@@ -119,7 +124,7 @@ select the collision candidate. The ordinary CLI `preview` command is also a
 startup entry: it reconciles first and then calls the pure preview method.
 
 The backend receives the immutable internal text plan and one fresh private
-staging pathname. Raw plan text is necessary for an eventual approved adapter,
+staging pathname. Raw plan text is necessary for a host-approved adapter,
 but is never part of the application view-model or receipt. Publication remains
 bound to the output directory in the operation snapshot even if a mutable
 settings store changes while the operation is running. Roots that exist only in
@@ -132,13 +137,27 @@ actual sample rate, duration, byte size, and aggregate plan counts against the
 staged PCM16 WAV and the admitted plan. These checks and strict receipt
 construction complete before the run reaches the durable `ready` state.
 
+The optional Irodori-TTS compatible source adapter is host-injected and keeps
+optional imports, runtime resources, reference paths, and rights evidence out
+of public payloads. Its tokenizer counter validates the pinned vocabulary and
+BOS identity without creating an inference runtime. Generation requires
+watermark readiness, checks every runtime token count before sampling, holds a
+host-verified reference lease, accepts bounded 48 kHz mono sample data, inserts
+the plan's exact boundary pauses, writes one application-owned staging WAV, and
+always closes an opened runtime. The host supplies the exact adapter and
+resource objects; this repository supplies no engine or asset payload.
+Its repository tests use fake adapter/runtime objects and synthetic PCM; they
+do not establish real-model execution, voice quality, consent, or
+redistribution approval.
+
 `startup()` and `run()` use one shared identity-bound recovery context. It binds
 the preflight recovery identity to the operating-system owner, holds the output
 directory guard, and verifies the generation-root snapshot before
-reconciliation. It reconciles generation state only, and `run()` retains the
-context through durable completion. Startup recovery never invokes the
-generation backend. Its public status is separate from the `NEW_GENERATION`
-result, and a competing ordinary startup is rejected while the owner is live.
+reconciliation. It reconciles generation state first and optional history
+sidecars second, and `run()` retains the context through durable completion.
+Startup recovery never invokes the generation backend. Its public status is
+separate from the `NEW_GENERATION` result, and a competing ordinary startup is
+rejected while the owner is live.
 
 Restore and install lifecycle integration is a separate hosting boundary.
 Supplying any corresponding root field to `ApplicationService`, or any reserved
@@ -154,6 +173,32 @@ identity string, and its complete PCM payload is verified as zero-valued before
 publication. It is not an engine implementation, tokenizer compatibility
 result, model test, audio-quality test, or Production evidence. See
 `docs/APPLICATION_WORKFLOW.md` for the complete port and CLI contract.
+
+## Verified history and playback contract
+
+History is an optional second phase of a recovery-owned generation, not a
+second publication mechanism. After WAV and receipt validation but before
+publication, a canonical pending sidecar binds the run ID, requested output
+basename, staged size/SHA-256, source-free receipt, backend identity, runtime
+configuration digest, and voice-rights-manifest digest. It becomes completed
+only when a completed recovery record names the same output, carries the same
+published size/SHA-256, and the current regular output file still has those
+exact bytes. Process loss after the publication link is recoverable: the next
+startup completes the generation journal first and then the matching history
+sidecar without tokenizer or backend access. Invalid, unprovable, changed, or
+linked history entries are moved to quarantine.
+
+History payloads expose a bounded run ID, WAV basename, size/SHA-256, public
+backend identity, receipt aggregate facts, relation, and completion time. They
+do not expose source text, runtime/reference paths, runtime configuration,
+rights documents, or their private contents. The two binding digests remain in
+the private sidecar and are used to isolate calibration evidence.
+
+Playback accepts one verified completed history record, rereads the exact
+regular non-link output while checking stable file identity, compares its
+size/SHA-256 with history, validates a non-empty mono PCM16 WAV, and gives the
+same verified byte string to synchronous Windows `winsound` playback. Startup,
+history listing, and playback do not import or load the synthesis runtime.
 
 ## Recovery and backup contract
 

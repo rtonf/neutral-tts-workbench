@@ -70,6 +70,20 @@ from .install_contract import (
     upgrade_layout,
     verify_layout,
 )
+from .irodori_backend import (
+    IrodoriBackend,
+    IrodoriBackendError,
+    IrodoriBackendHost,
+    IrodoriTokenizerCounter,
+)
+from .history import (
+    HISTORY_SCHEMA,
+    HistoryError,
+    HistoryRecord,
+    HistoryRecovery,
+    HistoryStore,
+)
+from .playback import PlaybackError, WinsoundPlayback
 from .planning import (
     DictionaryRule,
     DictionarySnapshot,
@@ -135,13 +149,23 @@ __all__ = [
     "GenerationAdmission",
     "GenerationEstimate",
     "GenerationRequest",
+    "HISTORY_SCHEMA",
+    "HistoryError",
+    "HistoryRecord",
+    "HistoryRecovery",
+    "HistoryStore",
     "InstallContractError",
     "InstallIntegrityError",
     "InstallPathError",
     "InstallResult",
     "InstallStateError",
+    "IrodoriBackend",
+    "IrodoriBackendError",
+    "IrodoriBackendHost",
+    "IrodoriTokenizerCounter",
     "NumericRange",
     "PausePolicy",
+    "PlaybackError",
     "PersistedSettings",
     "PlanSettings",
     "PreviewAdmissionError",
@@ -161,6 +185,7 @@ __all__ = [
     "TextPlan",
     "UnsupportedLifecycleIntegrationError",
     "UnsafeDirectoryError",
+    "WinsoundPlayback",
     "build_success_receipt",
     "build_release_candidate",
     "calibration_from_receipts",

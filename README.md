@@ -1,6 +1,6 @@
 # Neutral TTS Workbench (development name)
 
-This is a neutral, source-only TTS development lane for six bounded capabilities:
+This is a neutral, source-only TTS development lane for eight bounded capabilities:
 
 1. safe, previewable WAV filename templates with Windows-safe normalization
    and no-replace collision sequencing;
@@ -16,12 +16,19 @@ This is a neutral, source-only TTS development lane for six bounded capabilities
    backup with automatic pre-restore safety backup and rollback;
 6. a source-only owned-files layout contract for synthetic install, update,
    rollback, and owned-only uninstall testing, plus unsigned provenance and
-   clean-Windows acceptance schemas.
+   clean-Windows acceptance schemas;
+7. an optional, host-injected Irodori-TTS compatible backend and
+   identity-checked tokenizer-only counter that keep model/runtime/reference
+   assets outside the source package; and
+8. recovery-bound, hash-verified receipt history plus synchronous same-byte WAV
+   playback through the Windows standard library.
 
 The working display name is defined once in `src/neutral_tts/identity.py`. The
 Python module name is deliberately neutral. This repository is not an official
-or partnered product and currently contains no synthesis engine or public
-binary payload.
+or partnered product and contains no synthesis engine, voice/reference asset,
+model/runtime payload, or public binary payload. The compatible backend is a
+source adapter: a machine-local host must provide and verify every optional
+runtime object and asset before it can run.
 
 ## Current status
 

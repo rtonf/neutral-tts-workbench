@@ -4,11 +4,13 @@ This repository is not a public binary release candidate. It may be used for
 neutral source development and synthetic tests only.
 
 The current source lane deliberately contains no engine checkout, model,
-tokenizer assets, codec weights, voice profile, reference audio, playback
-overlay, Python runtime, CUDA runtime, native library, launcher, installer, or
-generated output. Adding any of those components is blocked until its exact
-dependency closure, license, notices, redistribution permission, privacy and
-consent basis, and content hashes have been independently approved.
+tokenizer assets, codec weights, voice profile, reference audio, bundled
+playback runtime, Python runtime, CUDA runtime, native playback/library
+payload, launcher, installer, or generated output. Adding any of those
+components is blocked until its exact dependency closure, license, notices,
+redistribution permission, privacy and consent basis, and content hashes have
+been independently approved. The standard-library same-byte playback source
+contract does not approve or supply such a runtime payload.
 
 Current blockers include:
 

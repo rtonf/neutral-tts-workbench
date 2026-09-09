@@ -1,16 +1,19 @@
 # Framework-neutral application workflow
 
-The application layer joins the existing filename, plan, estimate, and receipt
-contracts without selecting a GUI, web framework, synthesis engine, sampler,
-or runtime. `ApplicationService` accepts a tokenizer-count callback, a
+The application layer joins the existing filename, plan, estimate, receipt,
+recovery, and optional history contracts without selecting a GUI or web
+framework. `ApplicationService` accepts a tokenizer-count callback, a
 `PersistedSettings` snapshot (or `SettingsStore` adapter), and an optional
-backend implementing the small `Backend` protocol.
+backend implementing the small `Backend` protocol. The core does not select or
+load a synthesis engine. A separate compatible adapter can receive lazy,
+machine-local runtime objects from a host.
 
 The workflow is:
 
 1. Each public operation loads exactly one settings snapshot containing the
    filename context, plan and pause settings, tokenizer identity, calibration,
-   output directory, and generation recovery root. The service copies nested
+   output directory, generation recovery root, sample-rate range, and optional
+   history bindings. The service copies nested
    configuration into its immutable contract types at entry and uses that
    content-fixed snapshot for the entire operation. A later `SettingsStore`
    change applies to the next public operation; the operation already in
@@ -39,15 +42,18 @@ The workflow is:
 5. `startup()` and `run()` enter the same identity-bound recovery context. It
    gives the preflight recovery identity to the operating-system owner, holds a
    guard for the admitted output directory, and revalidates the generation-root
-   digest before reconciliation. It reconciles generation journals only.
-   `startup()` then exits; `run()` retains the same context through generation
-   and publication. Every normal return or exception releases the context, and
-   process termination releases the OS claim for the next startup.
+   digest before reconciliation. Generation journals are reconciled first.
+   When history is enabled, its sidecars are then reconciled under that same
+   owner and checked against the completed journal plus the exact published
+   size and SHA-256. `startup()` then exits; `run()` retains the same context
+   through generation, publication, and history completion. Every normal
+   return or exception releases the context, and process termination releases
+   the OS claim for the next startup.
 6. The recovery manager creates a durable `prepared` journal and a private
    per-run staging directory. A backend writes exactly the private staging path
    in `GenerationRequest` and
    returns `BackendResult` plus `ActualRun` facts. The request necessarily holds
-   the raw plan for an eventual approved adapter; it is internal-only and must
+   the raw plan for a host-approved adapter; it is internal-only and must
    never be serialized or logged.
 7. Before the durable `ready` transition, the service checks the staged artifact
    is stable mono PCM16 WAV data. The RIFF extent and every chunk extent must fit
@@ -55,12 +61,17 @@ The workflow is:
    sample rate must be no greater than 768,000 Hz. It verifies sample rate,
    duration, and byte count against the backend's actual facts and constructs
    the strict receipt, which rejects plan-count drift.
-8. Publication is the final side effect: a same-filesystem hard link with
-   atomic no-replace semantics into the exact output name bound at admission.
-   A newly occupied name rejects the run instead of selecting another suffix
-   after admission. The durable `completed` transition records matching staged
-   and published size/SHA-256 evidence.
-   `ApplicationOutcome.feedback_payload()` then exposes actual-versus-estimate
+8. With history enabled, the service first writes a canonical `pending`
+   sidecar containing the source-free receipt, public backend identity, staged
+   size/SHA-256, and hashes of the host's runtime configuration and voice-rights
+   manifest. Publication then creates a same-filesystem hard link with atomic
+   no-replace semantics at the exact output name bound at admission. A newly
+   occupied name rejects the run instead of selecting another suffix after
+   admission. The recovery journal's durable `completed` transition records
+   matching staged and published size/SHA-256 evidence. Only then can history
+   become `completed`. A later startup can finish that second phase after
+   process loss without constructing a backend.
+   `ApplicationOutcome.feedback_payload()` exposes actual-versus-estimate
    receipt feedback without source text or paths.
 
 `ApplicationService.startup()` performs identity-bound, explicitly scoped
@@ -70,7 +81,8 @@ result from the same recovery context used by `run()` before the new generation
 begins. Public JSON distinguishes `STARTUP_RECOVERY` from `NEW_GENERATION` and
 states `backend_invoked: false` for startup recovery. Completed WAV files are
 verified and retained; incomplete, failed, cancelled, malformed, and orphan run
-state is moved to quarantine.
+state is moved to quarantine. Enabled history lists only records whose sidecar,
+completed journal evidence, and current output bytes all agree.
 
 `PersistedSettings` retains fields for separately hosted restore and install
 lifecycle integration. Supplying any of those fields to `ApplicationService`
@@ -82,9 +94,52 @@ cannot access roots added only to the later store value. The next public
 operation reads the later value and rejects it. The standalone backup/restore
 and install APIs remain available under their dedicated ownership contracts.
 
+## Optional compatible backend
+
+`IrodoriTokenizerCounter` lazily loads only a host-selected local tokenizer and
+checks its expected vocabulary size and BOS token identity. It counts the BOS
+token exactly as the compatible runtime wrapper does; it does not construct an
+inference runtime. `IrodoriBackend` accepts a host-supplied adapter factory,
+runtime resources, synthesis-request type, reference paths, and a reference
+integrity/rights guard. Optional packages are imported only by the supplied
+host or by the counter's first use.
+
+Before the first sampler call, the backend verifies watermark readiness and
+recounts every admitted chunk through the runtime tokenizer. It holds the
+host's reference lease through sampling, accepts only the bounded `balanced` /
+`standard` profile, and rejects a changed reference, token drift, non-48 kHz
+result, non-mono or non-finite sample data, out-of-range samples, and a chunk
+longer than 30 seconds. Accepted chunks are converted to PCM16, separated by
+the exact admitted boundary pause, and written once to the application-owned
+staging path. Runtime cleanup runs on success, ordinary failure, and
+interruption.
+
+The command parser exposes `real-run`, while construction remains an explicit
+host boundary: a wrapper calls `neutral_tts.cli.main(...,
+real_runtime_factory=...)` and returns a `RealRuntimeBinding`. The binding
+contains only a tokenizer callback, backend object, bounded public identities,
+and SHA-256 bindings for machine-local runtime configuration and voice-rights
+evidence. The console entry point has no implicit plugin loader or arbitrary
+module runner and rejects `real-run` when no host factory is supplied.
+
+Successful hosted runs create verified history. The `startup`, `history`, and
+`play` commands require no runtime factory and do not tokenize or invoke a
+backend. `play` rereads the selected completed WAV, rejects links and byte/hash
+drift, validates non-empty mono PCM16, and passes those same verified bytes to
+synchronous `winsound` playback. Calibration for a new real run uses only
+verified receipts with the same runtime-configuration hash, voice-rights hash,
+device, quality, reading, and tokenizer identity.
+
+This adapter source adds no package dependency or runtime payload. Component
+selection, exact asset verification, voice consent/rights, and runtime
+construction remain responsibilities of the machine-local host and the
+separate distribution gates in `docs/RELEASE_NO_GO.md`. Repository tests use
+fake adapter objects and synthetic PCM only; they are not real-model execution,
+voice quality, consent, or redistribution evidence.
+
 ## Explicit demo adapter
 
-`DEMO_SILENCE_ONLY` is the only supplied backend. It creates a valid 100 ms,
+`DEMO_SILENCE_ONLY` is the only self-contained backend. It creates a valid 100 ms,
 16 kHz, mono PCM16 WAV containing silence. It does not synthesize speech and it
 does not import a model, tokenizer asset, sampler, GPU library, audio runtime,
 or native dependency. Only the exact supplied adapter receives the demo label,

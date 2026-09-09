@@ -31,9 +31,10 @@ def pre_generation_preview(
     tokenizer_identity: str = "unspecified",
     calibration: Calibration | None = None,
     device_class: str = "unknown-device",
+    sample_rate_range: tuple[int, int] = (16_000, 48_000),
 ) -> PreviewResult:
     plan = prepare_text_plan(source_text, token_counter, dictionary=dictionary, settings=settings, pause_policy=pause_policy, tokenizer_identity=tokenizer_identity)
-    return PreviewResult(preview_filename(template, context), plan, estimate_from_plan(plan, calibration=calibration, device_class=device_class))
+    return PreviewResult(preview_filename(template, context), plan, estimate_from_plan(plan, calibration=calibration, device_class=device_class, sample_rate_range=sample_rate_range))
 
 
 __all__ = ["PreviewResult", "pre_generation_preview"]

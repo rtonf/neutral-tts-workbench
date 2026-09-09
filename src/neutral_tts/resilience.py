@@ -339,6 +339,8 @@ class RunRecord:
     staging_directory: Path
     journal_path: Path
     error: str | None = None
+    published_size: int | None = None
+    published_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -623,7 +625,17 @@ class RecoveryManager:
             self._assert_roots()
             payload = self._payload(handle, state, **extra)
             _atomic_json(handle.record.journal_path, payload, self._journal_guard)
-            handle.record = RunRecord(handle.run_id, handle.record.requested_output, extra.get("output_name", handle.record.output_name), state, handle.staging_directory, handle.record.journal_path, extra.get("error", handle.record.error))
+            handle.record = RunRecord(
+                handle.run_id,
+                handle.record.requested_output,
+                extra.get("output_name", handle.record.output_name),
+                state,
+                handle.staging_directory,
+                handle.record.journal_path,
+                extra.get("error", handle.record.error),
+                extra.get("published_size", handle.record.published_size),
+                extra.get("published_sha256", handle.record.published_sha256),
+            )
             self._fault(state)
 
     def start(self, requested_output: str, *, run_id: str | None = None) -> RunHandle:
@@ -801,6 +813,8 @@ class RecoveryManager:
                                 "completed",
                                 staging,
                                 journal,
+                                published_size=published_size,
+                                published_sha256=published_sha256,
                             )
                         )
                         continue
@@ -821,7 +835,17 @@ class RecoveryManager:
                     quarantined_runs += 1
                 if state == "cancelled":
                     self._mark_cancelled(run_id)
-                record = RunRecord(run_id, payload["requested_output"], payload.get("output_name"), state, staging, journal, payload.get("error"))
+                record = RunRecord(
+                    run_id,
+                    payload["requested_output"],
+                    payload.get("output_name"),
+                    state,
+                    staging,
+                    journal,
+                    payload.get("error"),
+                    payload.get("published_size"),
+                    payload.get("published_sha256"),
+                )
                 records.append(record)
             except JournalCorrupt as exc:
                 quarantined_runs += 1

@@ -19,7 +19,7 @@ import wave
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
 
@@ -45,7 +45,8 @@ from .planning import (
 )
 from .preview import PreviewResult, pre_generation_preview
 from .receipts import ActualRun, build_success_receipt
-from .resilience import RecoveryManager, RecoveryReport
+from .history import HistoryRecord, HistoryRecovery, HistoryStore
+from .resilience import RecoveryError, RecoveryManager, RecoveryReport, _safe_run_id
 
 
 class ApplicationError(ValueError):
@@ -95,6 +96,21 @@ def _assert_generation_only_settings(settings: PersistedSettings) -> None:
         )
     ):
         raise UnsupportedLifecycleIntegrationError()
+    if not isinstance(settings.history_enabled, bool):
+        raise ApplicationError("history_enabled must be bool")
+    history_digests = (
+        settings.runtime_config_digest,
+        settings.voice_rights_manifest_sha256,
+    )
+    if (history_digests[0] is None) != (history_digests[1] is None):
+        raise ApplicationError("history binding digests must be supplied together")
+    for digest in history_digests:
+        if digest is not None and (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ApplicationError("history binding digest is invalid")
 
 
 def _sha256_payload(value: object) -> str:
@@ -526,11 +542,15 @@ class PersistedSettings:
     tokenizer_identity: str = "unspecified"
     device_class: str = "unknown-device"
     calibration: Calibration | None = None
+    sample_rate_range: tuple[int, int] = (16_000, 48_000)
     output_directory: Path | None = None
     staging_directory: Path | None = None
     restore_live_data_root: Path | None = None
     install_app_root: Path | None = None
     install_user_data_root: Path | None = None
+    history_enabled: bool = False
+    runtime_config_digest: str | None = None
+    voice_rights_manifest_sha256: str | None = None
 
     @property
     def settings_digest(self) -> str:
@@ -559,11 +579,15 @@ class PersistedSettings:
                 "tokenizer_identity": self.tokenizer_identity,
                 "device_class": self.device_class,
                 "calibration_key": None if self.calibration is None else self.calibration.key,
+                "sample_rate_range": list(self.sample_rate_range),
                 "output_directory": operational_identity(self.output_directory),
                 "staging_directory": operational_identity(self.staging_directory),
                 "restore_live_data_root": operational_identity(self.restore_live_data_root),
                 "install_app_root": operational_identity(self.install_app_root),
                 "install_user_data_root": operational_identity(self.install_user_data_root),
+                "history_enabled": self.history_enabled,
+                "runtime_config_digest": self.runtime_config_digest,
+                "voice_rights_manifest_sha256": self.voice_rights_manifest_sha256,
             }
         )
 
@@ -793,6 +817,7 @@ class StartupRecovery:
     restore_reconciled: bool = False
     install_configured: bool = False
     install_reconciled: bool = False
+    history: HistoryRecovery | None = None
 
     @classmethod
     def from_report(
@@ -821,14 +846,23 @@ class StartupRecovery:
             or self.quarantined_runs
             or self.restore_reconciled
             or self.install_reconciled
+            or (
+                self.history is not None
+                and (
+                    self.history.recovered_pending_records
+                    or self.history.quarantined_records
+                )
+            )
         ):
             return "RECOVERED"
-        if self.verified_completed_outputs:
+        if self.verified_completed_outputs or (
+            self.history is not None and self.history.verified_completed_records
+        ):
             return "VERIFIED"
         return "CLEAN"
 
     def public_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "operation": "STARTUP_RECOVERY",
             "status": self.status,
             "backend_invoked": False,
@@ -846,6 +880,9 @@ class StartupRecovery:
                 "reconciled": self.install_reconciled,
             },
         }
+        if self.history is not None:
+            payload["history"] = self.history.public_payload()
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -854,6 +891,7 @@ class _OwnedRecovery:
 
     manager: RecoveryManager
     startup_recovery: StartupRecovery
+    report: RecoveryReport
     owner: _RecoveryOwner
     output_guard: DirectoryGuard
 
@@ -872,6 +910,7 @@ class ApplicationOutcome:
     demo: bool = False
     demo_label: str | None = None
     startup_recovery: StartupRecovery | None = None
+    run_id: str | None = None
 
     def public_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -890,6 +929,8 @@ class ApplicationOutcome:
                 "speech": False,
                 "audio_kind": "silence",
             }
+        if self.run_id is not None:
+            payload["run_id"] = self.run_id
         return payload
 
     def feedback_payload(self) -> dict[str, object]:
@@ -950,15 +991,18 @@ class ApplicationService:
         return _snapshot_operational_roots(settings, require_core=require_core)
 
     @staticmethod
-    def _reconcile_owned(manager: RecoveryManager) -> StartupRecovery:
+    def _reconcile_owned(
+        manager: RecoveryManager,
+    ) -> tuple[RecoveryReport, StartupRecovery]:
         report = manager.reconcile_report()
-        return StartupRecovery.from_report(
+        startup = StartupRecovery.from_report(
             report,
             restore_configured=False,
             restore_reconciled=False,
             install_configured=False,
             install_reconciled=False,
         )
+        return report, startup
 
     @contextmanager
     def _recovery_context(
@@ -992,10 +1036,11 @@ class ApplicationService:
                     try:
                         owner.assert_unchanged()
                         output_guard.assert_unchanged()
-                        startup_recovery = self._reconcile_owned(manager)
+                        report, startup_recovery = self._reconcile_owned(manager)
                         recovery = _OwnedRecovery(
                             manager,
                             startup_recovery,
+                            report,
                             owner,
                             output_guard,
                         )
@@ -1004,6 +1049,20 @@ class ApplicationService:
                     finally:
                         owner.assert_unchanged()
                         output_guard.assert_unchanged()
+
+    @staticmethod
+    @contextmanager
+    def _history_context(
+        settings: PersistedSettings,
+        *,
+        output_directory: Path,
+        recovery_directory: Path,
+    ) -> Iterator[HistoryStore | None]:
+        if not settings.history_enabled:
+            yield None
+            return
+        with HistoryStore(recovery_directory, output_directory) as history:
+            yield history
 
     def startup(self) -> StartupRecovery:
         """Reconcile only configured roots, without invoking a generation backend."""
@@ -1018,7 +1077,53 @@ class ApplicationService:
             expected_recovery_identity=roots.identity("recovery"),
             expected_root_digest=roots.identity_digest,
         ) as recovery:
-            return recovery.startup_recovery
+            with self._history_context(
+                settings,
+                output_directory=roots.output,
+                recovery_directory=roots.recovery,
+            ) as history:
+                if history is None:
+                    return recovery.startup_recovery
+                _records, history_recovery = history.reconcile(
+                    recovery.report.records
+                )
+                return replace(
+                    recovery.startup_recovery,
+                    history=history_recovery,
+                )
+
+    def history_records(self, run_id: str | None = None) -> tuple[HistoryRecord, ...]:
+        """Return only hash-verified completed records without backend access."""
+
+        settings = self._current_settings()
+        if not settings.history_enabled:
+            raise ApplicationError("history is not enabled")
+        if run_id is not None:
+            try:
+                run_id = _safe_run_id(run_id)
+            except RecoveryError as exc:
+                raise ApplicationError("history run identity is invalid") from exc
+        roots = self._operational_roots(settings)
+        assert roots.output is not None and roots.recovery is not None
+        with self._recovery_context(
+            output_directory=roots.output,
+            recovery_directory=roots.recovery,
+            expected_output_identity=roots.identity("output"),
+            expected_recovery_identity=roots.identity("recovery"),
+            expected_root_digest=roots.identity_digest,
+        ) as recovery:
+            with self._history_context(
+                settings,
+                output_directory=roots.output,
+                recovery_directory=roots.recovery,
+            ) as history:
+                assert history is not None
+                records, _history_recovery = history.reconcile(
+                    recovery.report.records
+                )
+                if run_id is None:
+                    return records
+                return tuple(record for record in records if record.run_id == run_id)
 
     @staticmethod
     def _filename_digest(filename: FilenamePreview, candidate_wav_name: str | None = None) -> str:
@@ -1048,6 +1153,7 @@ class ApplicationService:
             tokenizer_identity=settings.tokenizer_identity,
             calibration=settings.calibration,
             device_class=settings.device_class,
+            sample_rate_range=settings.sample_rate_range,
         )
         candidate = None
         if roots.output is not None:
@@ -1136,6 +1242,11 @@ class ApplicationService:
         backend = self.backend
         if backend is None:
             raise ApplicationError("a generation backend is required")
+        if settings.history_enabled and (
+            settings.runtime_config_digest is None
+            or settings.voice_rights_manifest_sha256 is None
+        ):
+            raise ApplicationError("history generation binding is incomplete")
         admission = self._admit_with_settings(source_text, preview, settings)
         try:
             backend_identity = normalize_public_id(
@@ -1155,59 +1266,97 @@ class ApplicationService:
             expected_recovery_identity=admission.recovery_identity,
             expected_root_digest=admission.root_identity_digest,
         ) as recovery:
-            startup_recovery = recovery.startup_recovery
-            # Startup reconciliation and lock acquisition can change the
-            # directory view. Preserve the exact admitted candidate.
-            target = choose_collision_target(
-                admission.output_directory, admission.preview.filename
-            )
-            if target.name != admission.request.output_basename:
-                raise StalePreviewError("preview is stale")
-            handle = recovery.manager.start(
-                admission.request.output_basename,
-                run_id=admission.run_id,
-            )
-            if (
-                handle.staging_path.absolute()
-                != admission.request.staging_path.absolute()
-            ):
-                raise ApplicationError(
-                    "recovery staging identity is inconsistent"
+            with self._history_context(
+                settings,
+                output_directory=admission.output_directory,
+                recovery_directory=admission.recovery_directory,
+            ) as history:
+                startup_recovery = recovery.startup_recovery
+                if history is not None:
+                    _records, history_recovery = history.reconcile(
+                        recovery.report.records
+                    )
+                    startup_recovery = replace(
+                        startup_recovery,
+                        history=history_recovery,
+                    )
+                # Startup reconciliation and lock acquisition can change the
+                # directory view. Preserve the exact admitted candidate.
+                target = choose_collision_target(
+                    admission.output_directory, admission.preview.filename
                 )
-
-            def produce(staging_path: Path) -> Path:
-                nonlocal receipt
+                if target.name != admission.request.output_basename:
+                    raise StalePreviewError("preview is stale")
+                handle = recovery.manager.start(
+                    admission.request.output_basename,
+                    run_id=admission.run_id,
+                )
                 if (
-                    staging_path.absolute()
+                    handle.staging_path.absolute()
                     != admission.request.staging_path.absolute()
                 ):
                     raise ApplicationError(
                         "recovery staging identity is inconsistent"
                     )
-                result = backend.generate(admission.request)
-                if (
-                    not isinstance(result, BackendResult)
-                    or result.staged_path != staging_path
-                ):
-                    raise ApplicationError(
-                        "backend returned an unexpected staging result"
-                    )
-                _validate_staged_actual(
-                    result.staged_path,
-                    result.actual,
-                    require_silence=demo,
-                )
-                # A run becomes READY only after all receipt facts pass.
-                receipt = build_success_receipt(
-                    admission.preview.plan,
-                    admission.preview.estimate,
-                    result.actual,
-                )
-                return result.staged_path
 
-            handle.produce(produce)
-            recovery.assert_unchanged()
-            published = handle.publish(allow_collision_suffix=False)
+                def produce(staging_path: Path) -> Path:
+                    nonlocal receipt
+                    if (
+                        staging_path.absolute()
+                        != admission.request.staging_path.absolute()
+                    ):
+                        raise ApplicationError(
+                            "recovery staging identity is inconsistent"
+                        )
+                    result = backend.generate(admission.request)
+                    if (
+                        not isinstance(result, BackendResult)
+                        or result.staged_path != staging_path
+                    ):
+                        raise ApplicationError(
+                            "backend returned an unexpected staging result"
+                        )
+                    _validate_staged_actual(
+                        result.staged_path,
+                        result.actual,
+                        require_silence=demo,
+                    )
+                    # A run becomes READY only after all receipt facts pass.
+                    receipt = build_success_receipt(
+                        admission.preview.plan,
+                        admission.preview.estimate,
+                        result.actual,
+                    )
+                    return result.staged_path
+
+                handle.produce(produce)
+                recovery.assert_unchanged()
+                if history is not None:
+                    if (
+                        receipt is None
+                        or settings.runtime_config_digest is None
+                        or settings.voice_rights_manifest_sha256 is None
+                    ):
+                        raise ApplicationError(
+                            "history generation binding is incomplete"
+                        )
+                    history.prepare(
+                        run_id=admission.run_id,
+                        output_basename=admission.request.output_basename,
+                        staged_path=handle.staging_path,
+                        receipt=receipt,
+                        backend_identity=backend_identity,
+                        runtime_config_digest=settings.runtime_config_digest,
+                        voice_rights_manifest_sha256=(
+                            settings.voice_rights_manifest_sha256
+                        ),
+                    )
+                published = handle.publish(allow_collision_suffix=False)
+                if history is not None:
+                    history.complete(
+                        admission.run_id,
+                        recovery_records=(handle.record,),
+                    )
         if receipt is None:
             raise ApplicationError("completed generation receipt is unavailable")
         return ApplicationOutcome(
@@ -1217,6 +1366,7 @@ class ApplicationService:
             demo=demo,
             demo_label="DEMO_SILENCE_ONLY" if demo else None,
             startup_recovery=startup_recovery,
+            run_id=admission.run_id if settings.history_enabled else None,
         )
 
     @staticmethod
