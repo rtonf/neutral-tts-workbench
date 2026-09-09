@@ -21,6 +21,8 @@
   ],
   "asset_paths": [],
   "disclosure_paths": [
+    "README.md",
+    "docs/FEATURE_CONTRACTS.md",
     "THIRD_PARTY_NOTICES.md",
     "docs/RELEASE_NO_GO.md",
     "compliance/license-matrix.public.json",

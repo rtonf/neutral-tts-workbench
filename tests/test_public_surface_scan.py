@@ -1,4 +1,5 @@
 import io
+import json
 import stat
 import subprocess
 import tarfile
@@ -54,6 +55,88 @@ class PublicSurfaceScanTests(unittest.TestCase):
         report = scan_public_surface(self.root, policy)
         self.assertTrue(any(x["code"] == "disclosure_scope" and x["path"] == "src/safe.py" for x in report["findings"]))
         self.assertFalse(any(x["code"] == "disclosure_scope" and x["path"] == "docs/NOTICE.md" for x in report["findings"]))
+
+    def test_compatibility_disclosure_paths_are_exact_and_preserve_other_checks(self):
+        project_root = Path(__file__).resolve().parents[1]
+        production_allowlist = json.loads(
+            (project_root / "compliance" / "source-asset-allowlist.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        disclosure_paths = production_allowlist["disclosure_paths"]
+        self.assertIn("README.md", disclosure_paths)
+        self.assertIn("docs/FEATURE_CONTRACTS.md", disclosure_paths)
+
+        upstream = "-".join(("Irodori", "TTS"))
+        readme_statement = f"an optional, host-injected {upstream} compatible backend and\n"
+        feature_statement = (
+            f"The optional {upstream} compatible source adapter is host-injected and keeps\n"
+        )
+        synthetic_private = "-".join(("synthetic", "private", "marker"))
+        synthetic_pink = " ".join(("synthetic", "deprecated", "identity"))
+        synthetic_path = "R:" + chr(92) + "synthetic-user" + chr(92) + "artifact"
+        synthetic_credential = "".join(
+            ("api", "_key", " = '", "synthetic-credential-value", "'")
+        )
+
+        (self.root / "README.md").write_text(
+            "\n".join(
+                (
+                    readme_statement.rstrip(),
+                    synthetic_private,
+                    synthetic_pink,
+                    synthetic_path,
+                    synthetic_credential,
+                )
+            ),
+            encoding="utf-8",
+        )
+        (self.root / "docs" / "FEATURE_CONTRACTS.md").write_text(
+            feature_statement,
+            encoding="utf-8",
+        )
+        (self.root / "docs" / "OTHER.md").write_text(
+            feature_statement,
+            encoding="utf-8",
+        )
+        policy = {
+            **self.allowlist,
+            "source_paths": ["README.md", "docs/*.md", "src/**/*.py"],
+            "disclosure_paths": disclosure_paths,
+        }
+        private_policy = {
+            "disclosure_only_literals": [upstream],
+            "forbidden_literals": [synthetic_private],
+            "pink_semantic_regexes": [r"synthetic\s+deprecated\s+identity"],
+        }
+
+        report = scan_public_surface(
+            self.root,
+            policy,
+            private_policy=private_policy,
+        )
+        disclosure_findings = {
+            item["path"]
+            for item in report["findings"]
+            if item["code"] == "disclosure_scope"
+        }
+        self.assertNotIn("README.md", disclosure_findings)
+        self.assertNotIn("docs/FEATURE_CONTRACTS.md", disclosure_findings)
+        self.assertIn("docs/OTHER.md", disclosure_findings)
+
+        readme_codes = {
+            item["code"]
+            for item in report["findings"]
+            if item["path"] == "README.md"
+        }
+        self.assertTrue(
+            {
+                "credential_like",
+                "local_path",
+                "private_literal",
+                "pink_semantic_leak",
+            }.issubset(readme_codes)
+        )
 
     def test_nested_git_is_not_exempt(self):
         nested = self.root / "src" / ".git"
