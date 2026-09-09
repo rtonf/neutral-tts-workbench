@@ -23,9 +23,12 @@ Application startup uses only the configured generation recovery root and
 output root. They must be physically distinct and non-nested; alternate path
 spellings do not bypass this boundary. Startup, preview, and admission bind
 their physical identities so replacement before use fails closed. Configuring
-a restore or install lifecycle root on this host is rejected before generation
-roots are inspected, created, locked, or reconciled. Roots are never discovered
-or swept.
+a restore or install lifecycle root in a public operation's entry snapshot is
+rejected before generation roots are inspected, created, locked, or reconciled
+and before backend identity is read. Each operation uses one content-fixed
+snapshot throughout; a later store value applies to the next operation and its
+additional roots are not accessed by the operation already in progress. Roots
+are never discovered or swept.
 
 A backup is a versioned ZIP with a manifest and SHA-256 hash for every file. It
 covers settings, history, dictionary data, and approved generic voice-profile

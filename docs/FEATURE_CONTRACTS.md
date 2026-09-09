@@ -101,11 +101,15 @@ forged receipt-like dictionaries are rejected rather than used as history.
 
 `ApplicationService` is the framework-neutral boundary between persisted
 settings, preview, backend authorization, safe publication, and receipt
-feedback. Admission recomputes the pure preview and binds source/settings,
-plan, estimate, collision-resolved filename, and the physical identities of the
-generation output and recovery roots. Different path spellings, including
-filesystem aliases, cannot make those roots equal or nested. Any drift rejects
-the request before backend use.
+feedback. Each public operation obtains one content-fixed settings snapshot at
+entry. Nested configuration is copied into the immutable contract types, and
+the same snapshot is used through preview recomputation, admission, recovery,
+backend work, and publication. A store change after the snapshot is returned
+applies to the next public operation rather than being mixed into the current
+one. Admission binds source/settings, plan, estimate, collision-resolved
+filename, and the physical identities of the generation output and recovery
+roots. Different path spellings, including filesystem aliases, cannot make
+those roots equal or nested. Any drift rejects the request before backend use.
 The final collision selection must still equal the previewed candidate; it may
 not silently move to a suffix after the user approved a preview.
 
@@ -117,8 +121,11 @@ startup entry: it reconciles first and then calls the pure preview method.
 The backend receives the immutable internal text plan and one fresh private
 staging pathname. Raw plan text is necessary for an eventual approved adapter,
 but is never part of the application view-model or receipt. Publication remains
-bound to the output directory verified at admission even if a mutable settings
-store changes while the backend is running.
+bound to the output directory in the operation snapshot even if a mutable
+settings store changes while the operation is running. Roots that exist only in
+the later store value are not read or mutated by the in-progress operation. The
+next public operation reads the later snapshot and rejects an old preview or
+unsupported lifecycle configuration.
 
 Before the atomic no-replace publication, the service checks the backend's
 actual sample rate, duration, byte size, and aggregate plan counts against the
@@ -137,8 +144,8 @@ Restore and install lifecycle integration is a separate hosting boundary.
 Supplying any corresponding root field to `ApplicationService`, or any reserved
 lifecycle-root option to the ordinary CLI, returns an explicit unsupported
 configuration error before generation roots are inspected, created, locked, or
-reconciled. The standalone backup/restore and install APIs retain their own
-contracts below.
+reconciled and before backend identity is read. The standalone backup/restore
+and install APIs retain their own contracts below.
 
 The supplied `DEMO_SILENCE_ONLY` adapter is synthetic workflow evidence only.
 It writes silence, not speech, and its code and JSON output must always say so.

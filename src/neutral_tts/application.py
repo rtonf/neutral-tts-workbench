@@ -18,6 +18,7 @@ import uuid
 import wave
 from collections.abc import Iterator
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, runtime_checkable
@@ -82,6 +83,18 @@ class UnsupportedLifecycleIntegrationError(ApplicationError):
 
     def __init__(self) -> None:
         super().__init__(_UNSUPPORTED_LIFECYCLE_INTEGRATION_MESSAGE)
+
+
+def _assert_generation_only_settings(settings: PersistedSettings) -> None:
+    if any(
+        root is not None
+        for root in (
+            settings.restore_live_data_root,
+            settings.install_app_root,
+            settings.install_user_data_root,
+        )
+    ):
+        raise UnsupportedLifecycleIntegrationError()
 
 
 def _sha256_payload(value: object) -> str:
@@ -555,6 +568,12 @@ class PersistedSettings:
         )
 
 
+def _content_fixed_settings_snapshot(value: PersistedSettings) -> PersistedSettings:
+    """Detach the complete operation snapshot from caller-owned nested values."""
+
+    return deepcopy(value)
+
+
 @dataclass(frozen=True, slots=True)
 class _OperationalRoots:
     output: Path | None
@@ -915,18 +934,12 @@ class ApplicationService:
             value = source
         if not isinstance(value, PersistedSettings):
             raise TypeError("settings store must return PersistedSettings")
-        if any(
-            root is not None
-            for root in (
-                value.restore_live_data_root,
-                value.install_app_root,
-                value.install_user_data_root,
-            )
-        ):
-            raise UnsupportedLifecycleIntegrationError()
-        if value.filename_context is None:
+        _assert_generation_only_settings(value)
+        snapshot = _content_fixed_settings_snapshot(value)
+        _assert_generation_only_settings(snapshot)
+        if snapshot.filename_context is None:
             raise ApplicationError("filename context is required")
-        return value
+        return snapshot
 
     @staticmethod
     def _operational_roots(
@@ -1018,8 +1031,11 @@ class ApplicationService:
             }
         )
 
-    def preview(self, source_text: str) -> ApplicationPreview:
-        settings = self._current_settings()
+    def _preview_with_settings(
+        self,
+        source_text: str,
+        settings: PersistedSettings,
+    ) -> ApplicationPreview:
         roots = self._operational_roots(settings, require_core=False)
         result = pre_generation_preview(
             source_text,
@@ -1046,14 +1062,23 @@ class ApplicationService:
             candidate,
         )
 
-    def admit(self, source_text: str, preview: ApplicationPreview) -> GenerationAdmission:
+    def preview(self, source_text: str) -> ApplicationPreview:
+        """Build a preview from one content-fixed settings snapshot."""
+
+        return self._preview_with_settings(source_text, self._current_settings())
+
+    def _admit_with_settings(
+        self,
+        source_text: str,
+        preview: ApplicationPreview,
+        settings: PersistedSettings,
+    ) -> GenerationAdmission:
         if not isinstance(preview, ApplicationPreview):
             raise TypeError("admission requires an ApplicationPreview")
-        settings = self._current_settings()
         # Recompute all pure evidence.  This catches source, tokenizer,
         # dictionary, plan-settings, pause-policy, calibration, and template
         # changes instead of trusting a caller-provided digest alone.
-        fresh = self.preview(source_text)
+        fresh = self._preview_with_settings(source_text, settings)
         if preview.plan_digest != preview.estimate_digest:
             raise DigestMismatchError("plan and estimate digests do not match")
         if preview.filename_digest != self._filename_digest(
@@ -1097,10 +1122,21 @@ class ApplicationService:
             recovery_identity=roots.identity("recovery"),
         )
 
+    def admit(self, source_text: str, preview: ApplicationPreview) -> GenerationAdmission:
+        """Admit from the single settings snapshot acquired by this operation."""
+
+        return self._admit_with_settings(
+            source_text,
+            preview,
+            self._current_settings(),
+        )
+
     def run(self, source_text: str, preview: ApplicationPreview) -> ApplicationOutcome:
+        settings = self._current_settings()
         backend = self.backend
         if backend is None:
             raise ApplicationError("a generation backend is required")
+        admission = self._admit_with_settings(source_text, preview, settings)
         try:
             backend_identity = normalize_public_id(
                 getattr(backend, "backend_identity"), label="backend identity"
@@ -1111,7 +1147,6 @@ class ApplicationService:
             backend_identity == "DEMO_SILENCE_ONLY-v1"
             and _is_builtin_demo_backend(backend)
         )
-        admission = self.admit(source_text, preview)
         receipt: dict[str, Any] | None = None
         with self._recovery_context(
             output_directory=admission.output_directory,

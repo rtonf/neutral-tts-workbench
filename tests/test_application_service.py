@@ -181,6 +181,188 @@ class ApplicationServiceTests(unittest.TestCase):
             self.assertTrue((output_one / outcome.published_wav_name).exists())
             self.assertFalse(list(output_two.iterdir()))
 
+    def test_run_uses_one_snapshot_and_later_lifecycle_settings_apply_next_operation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output, staging = root / "output", root / "staging"
+            output.mkdir()
+            staging.mkdir()
+            lifecycle = root / "lifecycle"
+            lifecycle.mkdir()
+            (lifecycle / "marker").write_bytes(b"unchanged")
+            safe = PersistedSettings(
+                template="lesson-{sequence}",
+                filename_context=FilenameContext("20260901", "123000"),
+                output_directory=output,
+                staging_directory=staging,
+            )
+            unsupported = replace(safe, restore_live_data_root=lifecycle)
+
+            class Store:
+                value = safe
+                calls = 0
+
+                def get_settings(self):
+                    self.calls += 1
+                    current = self.value
+                    if self.calls == 2:
+                        self.value = unsupported
+                    return current
+
+            store = Store()
+            service = ApplicationService(
+                lambda text: max(1, len(text)),
+                settings_store=store,
+                backend=DEMO_SILENCE_ONLY(),
+            )
+            preview = service.preview("one")
+            lifecycle_before = self.snapshot_tree(lifecycle)
+
+            outcome = service.run("one", preview)
+
+            self.assertEqual(store.calls, 2)
+            self.assertTrue((output / outcome.published_wav_name).is_file())
+            self.assertEqual(self.snapshot_tree(lifecycle), lifecycle_before)
+            before_next_operation = self.snapshot_tree(root)
+            with self.assertRaises(UnsupportedLifecycleIntegrationError):
+                service.startup()
+            self.assertEqual(store.calls, 3)
+            self.assertEqual(self.snapshot_tree(root), before_next_operation)
+
+    def test_startup_uses_returned_snapshot_and_rejects_lifecycle_on_next_operation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output, staging = root / "output", root / "staging"
+            output.mkdir()
+            staging.mkdir()
+            lifecycle = root / "lifecycle"
+            lifecycle.mkdir()
+            (lifecycle / "marker").write_bytes(b"unchanged")
+            safe = PersistedSettings(
+                filename_context=FilenameContext("20260901", "123000"),
+                output_directory=output,
+                staging_directory=staging,
+            )
+            unsupported = replace(safe, install_app_root=lifecycle)
+
+            class Store:
+                value = safe
+                calls = 0
+
+                def get_settings(self):
+                    self.calls += 1
+                    current = self.value
+                    self.value = unsupported
+                    return current
+
+            store = Store()
+            service = ApplicationService(
+                lambda text: max(1, len(text)), settings_store=store
+            )
+            lifecycle_before = self.snapshot_tree(lifecycle)
+
+            self.assertEqual(service.startup().status, "CLEAN")
+            self.assertEqual(store.calls, 1)
+            self.assertEqual(self.snapshot_tree(lifecycle), lifecycle_before)
+            before_next_operation = self.snapshot_tree(root)
+            with self.assertRaises(UnsupportedLifecycleIntegrationError):
+                service.startup()
+            self.assertEqual(store.calls, 2)
+            self.assertEqual(self.snapshot_tree(root), before_next_operation)
+
+    def test_operation_snapshot_copies_nested_filename_context_content(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output, staging = root / "output", root / "staging"
+            output.mkdir()
+            staging.mkdir()
+            context = FilenameContext(
+                "20260901", "123000", title="original", job_id_short="test"
+            )
+            settings = PersistedSettings(
+                template="lesson-{title}-{sequence}",
+                filename_context=context,
+                output_directory=output,
+                staging_directory=staging,
+            )
+            expected_digest = settings.settings_digest
+
+            def mutating_counter(text):
+                object.__setattr__(context, "title", "changed")
+                return max(1, len(text))
+
+            service = ApplicationService(mutating_counter, settings)
+
+            preview = service.preview("one")
+
+            self.assertEqual(context.title, "changed")
+            self.assertEqual(preview.filename.wav_name, "lesson-original-001.wav")
+            self.assertEqual(preview.settings_digest, expected_digest)
+
+    def test_admit_and_next_safe_store_snapshot_each_use_one_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            first = service._settings
+            second = replace(first, tokenizer_identity="replacement-tokenizer")
+
+            class Store:
+                value = first
+                calls = 0
+
+                def get_settings(self):
+                    self.calls += 1
+                    return self.value
+
+            store = Store()
+            service._settings = None
+            service._settings_store = store
+            preview = service.preview("one")
+            admission = service.admit("one", preview)
+            self.assertEqual(admission.output_directory, root / "output")
+            self.assertEqual(store.calls, 2)
+            store.value = second
+
+            with self.assertRaises(StalePreviewError):
+                service.run("one", preview)
+
+            self.assertEqual(store.calls, 3)
+
+    def test_lifecycle_rejection_precedes_backend_identity_access(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            service = self.make_service(root)
+            preview = service.preview("one")
+            lifecycle = root / "lifecycle"
+            lifecycle.mkdir()
+            service._settings = replace(
+                service._settings, install_user_data_root=lifecycle
+            )
+
+            class BackendProbe:
+                identity_reads = 0
+                generate_calls = 0
+
+                @property
+                def backend_identity(self):
+                    self.identity_reads += 1
+                    return "backend-probe-v1"
+
+                def generate(self, request):
+                    self.generate_calls += 1
+                    raise AssertionError("backend must not run")
+
+            backend = BackendProbe()
+            service.backend = backend
+            before = self.snapshot_tree(root)
+
+            with self.assertRaises(UnsupportedLifecycleIntegrationError):
+                service.run("one", preview)
+
+            self.assertEqual(backend.identity_reads, 0)
+            self.assertEqual(backend.generate_calls, 0)
+            self.assertEqual(self.snapshot_tree(root), before)
+
     def test_inconsistent_backend_audio_never_publishes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

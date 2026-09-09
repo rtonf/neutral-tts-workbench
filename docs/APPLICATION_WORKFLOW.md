@@ -8,10 +8,15 @@ backend implementing the small `Backend` protocol.
 
 The workflow is:
 
-1. Load one settings snapshot containing the filename context, plan and pause
-   settings, tokenizer identity, calibration, output directory, and generation
-   recovery root. This application host owns generation recovery only. Restore
-   and install lifecycle operations use their separate low-level contracts.
+1. Each public operation loads exactly one settings snapshot containing the
+   filename context, plan and pause settings, tokenizer identity, calibration,
+   output directory, and generation recovery root. The service copies nested
+   configuration into its immutable contract types at entry and uses that
+   content-fixed snapshot for the entire operation. A later `SettingsStore`
+   change applies to the next public operation; the operation already in
+   progress neither mixes snapshots nor chases the latest store value. This
+   application host owns generation recovery only. Restore and install
+   lifecycle operations use their separate low-level contracts.
 2. Call `preview(source_text)`. The service builds one deterministic text plan,
    estimate, rendered filename, and collision-resolved candidate. This method
    only reads settings, configured root identities, and the output directory's
@@ -20,12 +25,16 @@ The workflow is:
 3. Display only `ApplicationPreview.public_payload()`. It contains hashes,
    counts, ranges, and a sanitized filename, but no raw source/synthesis text or
    filesystem path.
-4. Call `run(source_text, preview)` for execution. `admit(source_text, preview)`
-   exposes the same validation boundary for hosts that need to inspect an
-   admission before execution. Admission recomputes the plan and estimate,
-   verifies every digest and settings binding, and rejects source, settings,
-   tokenizer, calibration, physical directory identity, root overlap, or
-   filename collision drift. Output and recovery roots must be physically
+4. Call `run(source_text, preview)` for execution. `run()` obtains its own entry
+   snapshot and uses it for preview recomputation, admission, recovery, backend
+   work, and publication. `admit(source_text, preview)` exposes the same
+   validation boundary for hosts that need to inspect an admission before
+   execution and likewise uses one entry snapshot. Admission verifies every
+   digest and settings binding and rejects source, settings, tokenizer,
+   calibration, physical directory identity, root overlap, or filename
+   collision drift. A safe settings change between the earlier `preview()` call
+   and this operation makes the preview stale; lifecycle-root configuration is
+   rejected as unsupported. Output and recovery roots must be physically
    separate even when different path spellings identify the same directory.
 5. `startup()` and `run()` enter the same identity-bound recovery context. It
    gives the preflight recovery identity to the operating-system owner, holds a
@@ -65,9 +74,13 @@ state is moved to quarantine.
 
 `PersistedSettings` retains fields for separately hosted restore and install
 lifecycle integration. Supplying any of those fields to `ApplicationService`
-raises `UnsupportedLifecycleIntegrationError` before an output or recovery root
-is inspected, created, locked, or reconciled. The standalone backup/restore and
-install APIs remain available under their dedicated ownership contracts.
+as the entry snapshot raises `UnsupportedLifecycleIntegrationError` before an
+output or recovery root is inspected, created, locked, or reconciled, and
+before backend identity is read. If a store changes after returning a supported
+entry snapshot, the in-progress operation remains bound to that snapshot and
+cannot access roots added only to the later store value. The next public
+operation reads the later value and rejects it. The standalone backup/restore
+and install APIs remain available under their dedicated ownership contracts.
 
 ## Explicit demo adapter
 
