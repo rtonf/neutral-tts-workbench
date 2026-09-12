@@ -53,7 +53,7 @@
     },
     {
       "gate_id": "installer",
-      "status": "CONTRACT_ONLY_NO_ARTIFACT",
+      "status": "LOCAL_CANDIDATE_PENDING_ACCEPTANCE",
       "payload_present": false,
       "required_evidence": ["owned_files_manifest", "clean_device_results", "uninstall_results", "rollback_results", "authority_approval"],
       "approval_authority": null,

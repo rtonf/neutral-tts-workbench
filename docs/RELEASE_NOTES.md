@@ -14,6 +14,9 @@
 - Added local Python/Tk installer and launcher using the existing owned-files
   update, rollback and uninstall transactions. Application files and user data
   are separate. Python/Tk is a prerequisite, not part of this candidate.
+- Corrected product rollback to require the retained application folder. Setup
+  displays that folder and provides journal recovery after an interrupted update.
+  Synthetic history is visibly labeled as silence and shows the selected WAV path.
 
 Known limitations: real inference and saved-WAV watermark detection remain
 unaccepted; inference setup still needs a reviewed complete configuration;

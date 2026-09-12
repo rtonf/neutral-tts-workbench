@@ -30,7 +30,7 @@
           "status": {
             "enum": [
               "BLOCKED_PENDING_AUTHORITY_DECISION", "NOT_APPROVED", "NOT_REVIEWED",
-              "CONTRACT_ONLY_NO_ARTIFACT", "UNSIGNED"
+              "CONTRACT_ONLY_NO_ARTIFACT", "LOCAL_CANDIDATE_PENDING_ACCEPTANCE", "UNSIGNED", "APPROVED"
             ]
           },
           "payload_present": {"type": "boolean"},
@@ -40,9 +40,22 @@
             "uniqueItems": true,
             "items": {"type": "string", "minLength": 1}
           },
-          "approval_authority": {"type": "null"},
-          "approval_record": {"type": "null"}
-        }
+          "approval_authority": {"type": ["string", "null"], "minLength": 1},
+          "approval_record": {"type": ["string", "null"], "minLength": 1}
+        },
+        "allOf": [{
+          "if": {"properties": {"gate_id": {"const": "source_license"}}},
+          "then": {"properties": {
+            "status": {"const": "APPROVED"},
+            "approval_authority": {"const": "rtonf"},
+            "approval_record": {"const": "docs/SOURCE_LICENSE_DECISION.md"}
+          }},
+          "else": {"properties": {
+            "status": {"not": {"const": "APPROVED"}},
+            "approval_authority": {"type": "null"},
+            "approval_record": {"type": "null"}
+          }}
+        }]
       }
     }
   }

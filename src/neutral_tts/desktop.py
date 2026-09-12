@@ -92,6 +92,7 @@ class Desktop:
         self.worker = WorkerProcess(data_root, python=python)
         self.controls = []
         self.history_ids = []
+        self.history_paths = []
         self.preview_ready = False
         self.settings_dirty = False
         self.window.title(DISPLAY_NAME)
@@ -153,7 +154,7 @@ class Desktop:
             self.controls.append(entry)
             if key in {"output_directory", "tokenizer_config", "runtime_config"}:
                 self._button(row, "選択", lambda key=key: self._select_setting(key)).pack(side="left", padx=4)
-        ttk.Label(setup, text="辞書：1行につき「表記<TAB>読み」。入力と辞書はこの端末に保存します。").pack(anchor="w", pady=(10, 4))
+        ttk.Label(setup, text="辞書：1行につき「表記<TAB>読み」。設定と辞書はこの端末に保存します。").pack(anchor="w", pady=(10, 4))
         self.dictionary = tk.Text(setup, height=5, wrap="none", undo=True)
         self.dictionary.pack(fill="both", expand=True)
         self.dictionary.bind("<<Modified>>", self._input_changed)
@@ -161,12 +162,15 @@ class Desktop:
         ttk.Label(setup, text="未確認の重みは取得・実行できません。参照録音の利用権、声の複製同意、生成音声の公開範囲を別々に確認してください。", wraplength=850).pack(anchor="w")
         self.history = tk.Listbox(history, height=16, exportselection=False)
         self.history.pack(fill="both", expand=True)
+        self.history_destination = tk.StringVar(value="選択したWAVの場所をここへ表示します。")
+        self.history.bind("<<ListboxSelect>>", self._history_selected)
+        ttk.Label(history, textvariable=self.history_destination, wraplength=850).pack(anchor="w", pady=6)
         self._button(history, "選択したWAVを検査して再生", self._play).pack(anchor="e", pady=8)
         ttk.Label(maintenance, text="バックアップ：設定・辞書・検証済み履歴。出力WAV・外部資産は別途保管してください。\n復元は現在の設定・辞書・履歴を置換します。復元前の安全バックアップを自動作成します。", wraplength=850).pack(anchor="w", pady=8)
         self._button(maintenance, "バックアップを保存", self._backup).pack(anchor="w", pady=5)
         self._button(maintenance, "バックアップから復元", self._restore).pack(anchor="w", pady=5)
         self._button(maintenance, "回復・履歴の再検査", lambda: self._start("startup", {})).pack(anchor="w", pady=5)
-        for operation, label in (("install", "候補をインストール"), ("update", "候補へ更新"), ("rollback", "前の候補へ戻す"), ("uninstall", "アプリを削除（利用者データを保持）")):
+        for operation, label in (("install", "候補をインストール"), ("update", "候補へ更新"), ("rollback", "前の候補へ戻す"), ("recover", "アプリ更新の中断から復旧"), ("uninstall", "アプリを削除（利用者データを保持）")):
             self._button(maintenance, label, lambda operation=operation: self._lifecycle(operation)).pack(anchor="w", pady=4)
         ttk.Label(maintenance, text="データフォルダー：" + str(data_root), wraplength=850).pack(anchor="w", pady=10)
         bottom = ttk.Frame(outer)
@@ -250,9 +254,14 @@ class Desktop:
                         self.settings_dirty = False
                         self.history.delete(0, "end")
                         self.history_ids = []
+                        self.history_paths = []
+                        self.history_destination.set("選択したWAVの場所をここへ表示します。")
                         for record in result["history"]:
                             self.history_ids.append(record["run_id"])
-                            self.history.insert("end", record["output"]["wav_name"] + "  |  " + record["completed_at_utc"])
+                            self.history_paths.append(str(Path(result["settings"]["output_directory"]) / record["output"]["wav_name"]))
+                            from .demo_backend import DEMO_SILENCE_ONLY
+                            label = "合成テスト・無音  |  " if record["backend"]["identity"] == DEMO_SILENCE_ONLY.backend_identity else ""
+                            self.history.insert("end", label + record["output"]["wav_name"] + "  |  " + record["completed_at_utc"])
                 elif operation == "preview":
                     self.preview_ready = True
                     self.destination.set(result["destination"])
@@ -277,6 +286,9 @@ class Desktop:
                     self._invalidate()
                     self._start("startup", {})
                 elif operation in {"restore", "configure", "lifecycle"}:
+                    if operation == "lifecycle" and result.get("retained_root"):
+                        from tkinter import messagebox
+                        messagebox.showinfo("保持したアプリの場所", "以前のファイルを次の場所に保持しました。更新前へ戻すときは、このフォルダーを選択してください。\n" + result["retained_root"], parent=self.window)
                     self._invalidate()
                     self._start("startup", {})
             if not self.worker.busy:
@@ -348,6 +360,11 @@ class Desktop:
         if selection:
             self._start("play", {"run_id": self.history_ids[selection[0]]})
 
+    def _history_selected(self, event=None):
+        selection = self.history.curselection()
+        if selection:
+            self.history_destination.set(self.history_paths[selection[0]])
+
     def _backup(self):
         from tkinter import filedialog
         selected = filedialog.asksaveasfilename(parent=self.window, defaultextension=".zip", filetypes=[("Backup", "*.zip")])
@@ -366,11 +383,12 @@ class Desktop:
         if not app:
             return
         layout = None
-        if operation in {"install", "update"}:
-            layout = filedialog.askdirectory(parent=self.window, title="OWNED_FILES.jsonを含む候補を選択")
+        if operation in {"install", "update", "rollback"}:
+            title = "更新時に表示された、戻す保存候補を選択" if operation == "rollback" else "OWNED_FILES.jsonを含む候補を選択"
+            layout = filedialog.askdirectory(parent=self.window, title=title)
             if not layout:
                 return
-        if messagebox.askokcancel("操作対象の確認", operation + "\n" + app + "\n利用者のデータとWAVは保持します。", parent=self.window):
+        if messagebox.askokcancel("操作対象の確認", operation + "\n" + app + ("\n使用する候補：" + layout if layout else "") + "\n利用者のデータとWAVは保持します。", parent=self.window):
             self._start("lifecycle", {"operation": operation, "app_root": app, "layout_root": layout})
 
     def _close(self):

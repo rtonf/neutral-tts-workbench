@@ -15,7 +15,7 @@ from neutral_tts.application import StalePreviewError
 from neutral_tts.backup_restore import _DataRootOwner, BackupRestoreBusy
 from neutral_tts.desktop import WorkerProcess
 from neutral_tts.filename_templates import DEFAULT_TEMPLATE
-from neutral_tts.workbench import Workbench
+from neutral_tts.workbench import Workbench, WorkbenchError
 from neutral_tts.tokenizer_runtime import load_tokenizer
 from tests import test_local_runtime as runtime_tests
 from tests.test_local_runtime import sha
@@ -193,6 +193,92 @@ Workbench(Path(sys.argv[1])).generate('synthetic',demo=True)
             workbench.configure(values, [{"surface": "x", "reading": "expanded" * 30}])
             with self.assertRaises(ValueError):
                 workbench.preview("x" * 4096, demo=True)
+
+    def make_layouts(self, root):
+        from neutral_tts.install_contract import create_test_layout
+        layouts = []
+        for index in (1, 2):
+            source = root / ("source-" + str(index))
+            source.mkdir()
+            (source / "app.py").write_text("VERSION = " + str(index) + "\n", encoding="utf-8")
+            layout = root / ("layout-" + str(index))
+            create_test_layout(source, layout, {"app.py": "source"},
+                candidate_id="candidate-" + str(index), source_commit=str(index) * 40,
+                source_tree=str(index + 2) * 40, app_root_name="NeutralApp",
+                verification_scope="LOCAL_WINDOWS_SOURCE_CANDIDATE")
+            layouts.append(layout)
+        return layouts
+
+    def test_product_worker_install_update_rollback_uninstall_preserves_data(self):
+        from neutral_tts.install_contract import verify_layout
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            host, _ = self.configure(root)
+            host.preview("synthetic", demo=True)
+            generated = host.generate("synthetic", demo=True)
+            wav = Path(generated["destination"])
+            before = sha(wav.read_bytes())
+            settings = (host.root / "settings/app.json").read_bytes()
+            layouts = self.make_layouts(root)
+            app = root / "NeutralApp"
+            worker = WorkerProcess(host.root)
+            def run(operation, layout=None):
+                worker.start("lifecycle", {"operation": operation, "app_root": str(app),
+                    "layout_root": str(layout) if layout else None})
+                _, response = worker.events.get(timeout=20)
+                self.assertEqual(response["status"], "ok", response)
+                self.assertEqual(len(host.startup()["history"]), 1)
+                self.assertEqual(sha(wav.read_bytes()), before)
+                self.assertEqual((host.root / "settings/app.json").read_bytes(), settings)
+                return response["result"]
+            run("install", layouts[0])
+            upgraded = run("update", layouts[1])
+            self.assertEqual(verify_layout(app)["candidate_id"], "candidate-2")
+            run("rollback", Path(upgraded["retained_root"]))
+            self.assertEqual(verify_layout(app)["candidate_id"], "candidate-1")
+            self.assertFalse(run("recover")["reconciled"])
+            unknown = app / "personal-note.txt"
+            unknown.write_bytes(b"user owned")
+            removed = run("uninstall")
+            self.assertEqual(unknown.read_bytes(), b"user owned")
+            self.assertFalse((app / "app.py").exists())
+            self.assertEqual(verify_layout(Path(removed["retained_root"]))["candidate_id"], "candidate-1")
+            for operation, layout in (("rollback", None), ("update", None), ("uninstall", layouts[0]),
+                                      ("recover", layouts[0]), ("unknown", None)):
+                with self.assertRaises(WorkbenchError):
+                    host.lifecycle(operation, app, layout)
+
+    def test_product_update_process_death_recovers_prior_application_then_retries(self):
+        from neutral_tts.install_contract import verify_layout
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            host, _ = self.configure(root)
+            layouts = self.make_layouts(root)
+            app = root / "NeutralApp"
+            host.lifecycle("install", app, layouts[0])
+            script = """
+import os, sys
+from pathlib import Path
+from neutral_tts import install_contract
+from neutral_tts.workbench import Workbench
+upgrade = install_contract.upgrade_layout
+def interrupted(*args):
+    def fault(phase):
+        if phase == 'upgrade.after_current_relocated':
+            os._exit(73)
+    return upgrade(*args, fault_hook=fault)
+install_contract.upgrade_layout = interrupted
+Workbench(Path(sys.argv[1])).lifecycle('update', sys.argv[2], sys.argv[3])
+"""
+            process = subprocess.run([sys.executable, "-B", "-c", script, str(host.root), str(app), str(layouts[1])],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+            self.assertEqual(process.returncode, 73)
+            self.assertFalse(app.exists())
+            self.assertTrue(host.lifecycle("recover", app)["reconciled"])
+            self.assertEqual(verify_layout(app)["candidate_id"], "candidate-1")
+            host.lifecycle("update", app, layouts[1])
+            self.assertEqual(verify_layout(app)["candidate_id"], "candidate-2")
+            self.assertTrue(host.startup()["configured"])
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ def main():
     tracked = git("ls-tree", "-r", "--name-only", commit).decode().splitlines()
     selected = {name: ("source" if name.endswith((".py", ".pyw")) else "documentation") for name in tracked
                 if (name.startswith("src/neutral_tts/") and name.endswith(".py"))
-                or name in {"launch_desktop.pyw", "windows_setup.pyw", "LICENSE", "README.md", "config/tokenizer-windows-py313.lock.txt"}
+                or name in {"launch_desktop.pyw", "windows_setup.pyw", "LICENSE", "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "config/tokenizer-windows-py313.lock.txt"}
                 or (name.startswith("docs/") and name.endswith(".md"))}
     if not {"launch_desktop.pyw", "windows_setup.pyw", "src/neutral_tts/installer.py"} <= set(selected):
         raise ValueError("The selected commit does not contain the installer and launcher.")

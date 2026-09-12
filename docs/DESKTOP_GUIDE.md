@@ -108,6 +108,19 @@ only unchanged owned application files into a recovery sibling; unknown files,
 user data and WAVs are retained. Use the installer from the candidate folder for
 uninstall and close the installed desktop first.
 
+After an update, the installer displays the retained previous application folder
+and selects it in the candidate field. To roll back, select that retained sibling
+folder (including its `OWNED_FILES.json`), confirm both paths, then use Rollback.
+Select the new distribution folder again for a subsequent update. The retained
+folder is not a backup of settings or WAVs. Uninstall and recovery accept no
+candidate argument; they use the selected application and data folders.
+
+If an update is interrupted, open `windows_setup.pyw` from the separate candidate
+folder, select the same application and data folders, and use the recovery button
+before retrying. Recovery validates the journal and retained bytes; it does not
+guess which files can be removed. An unverified or externally changed state needs
+attention and is retained. Keep all retained folders until recovery completes.
+
 This is a Python/Tk source installer, not an EXE/MSI or a self-contained runtime.
 New Windows installation, 9 capability-dependent reparse tests, physical offline
 testing, code signing, final speech/watermark tests and public acquisition tests

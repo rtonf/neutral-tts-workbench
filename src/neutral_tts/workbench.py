@@ -308,11 +308,18 @@ class Workbench:
 
     def lifecycle(self, operation, app_root, layout_root=None):
         from . import install_contract as install
+        if operation not in {"install", "update", "rollback", "uninstall", "recover"}:
+            raise WorkbenchError("The lifecycle operation is unsupported.")
+        needs_layout = operation in {"install", "update", "rollback"}
+        if needs_layout != bool(layout_root) or (not needs_layout and layout_root is not None):
+            raise WorkbenchError("Select a candidate for install/update or a retained folder for rollback only.")
         with self.owned():
-            actions = {"install": install.install_layout, "update": install.upgrade_layout,
-                       "rollback": install.rollback_upgrade, "uninstall": install.uninstall_owned}
-            action = actions[operation]
-            args = [Path(app_root), self.root]
-            if operation in {"install", "update"}:
-                args.insert(0, Path(layout_root))
-            return action(*args)
+            app = Path(app_root)
+            if operation == "recover":
+                return {"action": "recover", "reconciled": install.reconcile_install_lifecycle(app, self.root)}
+            if operation == "uninstall":
+                return install.uninstall_owned(app, self.root)
+            if operation == "rollback":
+                return install.rollback_upgrade(app, Path(layout_root), self.root)
+            action = install.install_layout if operation == "install" else install.upgrade_layout
+            return action(Path(layout_root), app, self.root)
