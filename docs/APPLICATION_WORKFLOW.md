@@ -151,6 +151,53 @@ separate distribution gates in `docs/RELEASE_NO_GO.md`. Repository tests use
 fake adapter objects and synthetic PCM only; they are not real-model execution,
 voice quality, consent, or redistribution evidence.
 
+### Model-free machine runtime doctor
+
+`neutral-tts-runtime-doctor` performs a bounded, sanitized inspection before a
+host considers constructing the optional runtime. The caller supplies the
+expected Python identity, the existing requirements-lock digest, one or more
+installed-metadata roots, a bounded list of native files, and an explicit
+`nvidia-smi` path when the GPU query is enabled. Executable paths must be
+absolute paths selected by trusted, machine-local host configuration; they must
+never come from source text, an end user, an archive, or another untrusted
+input. The regular-file and reparse checks do not authenticate a binary, check
+its signature or hash, contain child processes, or make arbitrary executables
+safe. A trusted executable runs with the diagnostic process's authority. The
+host is responsible for its provenance and directory/DLL trust before calling
+the doctor. `nvidia-smi` is never resolved implicitly from `PATH`.
+
+The command runs the declared Python executable only with a fixed `-I -S`
+standard-library identity probe and runs `nvidia-smi` only with its fixed
+read-only field query. Both probes use timeouts and streaming byte limits:
+Python stdout/stderr are capped at 4096/1024 bytes; GPU stdout/stderr are capped
+at 8192/2048 bytes, with at most 16 rows of 256 characters. An over-limit,
+timed-out, malformed, or non-UTF-8 response is rejected without emitting the
+response or an exception.
+
+The doctor parses `.dist-info/METADATA` and `direct_url.json` itself, checks
+exact `==` versions and Git commit identities from the lock, and never imports
+the installed packages. Lock and `METADATA` reads are capped at 1 MiB, direct
+URL metadata at 64 KiB, and additional requirements at 512 entries of 2048
+characters. Reads use an opened regular-file descriptor, a max-plus-one loop,
+and before/after file identity and size checks. A detected link, reparse point,
+replacement, growth, truncation, or over-limit file fails closed.
+Normalized distribution names, versions, and caller-declared native component
+IDs are diagnostic identifiers and may appear in the local JSON report. Hosts
+must use non-sensitive component IDs and must not publish the report as a
+general telemetry payload.
+
+Native files with an expected SHA-256 are hashed only below a fixed 64 MiB
+limit, using the same max-plus-one and file-identity checks. Larger files are
+`UNVERIFIED`; presence-only declarations establish only inspection-time regular
+file presence. The report separates `VERIFIED`, `MISSING`, `MISMATCH`, and
+`UNVERIFIED` results and always returns an overall `INCOMPLETE` or `NOT_READY`
+status with `execution_ready` false. `NOT_READY` means a declared diagnostic
+input is missing or mismatched, not that a real generation attempt failed. In
+particular, matching Python and distribution metadata or observing GPU driver
+metadata does not establish native ABI compatibility, DLL loadability, CUDA
+usability, model loading, watermark readiness, synthesis, playback, or
+generated-output acceptance.
+
 The output and recovery roots are an owner-private local trust boundary. The
 guards and hash chain detect pathname, byte, and evidence drift between stages;
 they do not make files immutable against a different process that already has
