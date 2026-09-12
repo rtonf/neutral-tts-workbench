@@ -30,6 +30,7 @@ from neutral_tts.planning import PausePolicy, PlanSettings, prepare_text_plan
 
 
 class FakeTokenizer:
+    is_fast = True
     bos_token_id = 1
 
     def __len__(self) -> int:

@@ -10,6 +10,7 @@ dependencies = []
 neutral-tts = "neutral_tts.cli:main"
 neutral-tts-backup = "neutral_tts.backup_restore_cli:main"
 neutral-tts-runtime-doctor = "neutral_tts.runtime_doctor:main"
+neutral-tts-desktop = "neutral_tts.desktop:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

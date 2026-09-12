@@ -130,9 +130,9 @@ def _assert_supported_lifecycle_args(args: argparse.Namespace) -> None:
     if any(
         value is not None
         for value in (
-            args.restore_live_data_root,
-            args.install_app_root,
-            args.install_user_data_root,
+            getattr(args, "restore_live_data_root", None),
+            getattr(args, "install_app_root", None),
+            getattr(args, "install_user_data_root", None),
         )
     ):
         raise UnsupportedLifecycleIntegrationError()
@@ -207,7 +207,7 @@ def _parser() -> argparse.ArgumentParser:
         sub.add_argument("--install-app-root", help=lifecycle_help)
         sub.add_argument("--install-user-data-root", help=lifecycle_help)
 
-    for command in ("preview", "demo-run", "real-run"):
+    for command in ("demo-preview", "demo-run", "real-run", "preview", "generate"):
         sub = subparsers.add_parser(command)
         sub.add_argument("text", nargs="?", help=argparse.SUPPRESS)
         sub.add_argument(
@@ -215,7 +215,10 @@ def _parser() -> argparse.ArgumentParser:
             dest="text_option",
             help="source text (never emitted in public JSON)",
         )
-        operational_arguments(sub)
+        if command in {"preview", "generate"}:
+            sub.add_argument("--data-root", required=True, help="data folder configured by the desktop setup")
+        else:
+            operational_arguments(sub)
         sub.add_argument("--text-file", help="UTF-8 input file; use - to read standard input")
         if command == "real-run":
             sub.add_argument("--runtime-config", required=True)
@@ -245,23 +248,32 @@ def main(
         return 2
     # argparse cannot use the same dest for positional and optional values;
     # combine them privately, with the explicit flag taking precedence.
-    if args.command in {"preview", "demo-run", "real-run"}:
+    if args.command in {"preview", "demo-preview", "demo-run", "real-run", "generate"}:
         args.text = args.text_option if args.text_option is not None else args.text
     try:
         _assert_supported_lifecycle_args(args)
         source_text = (
             _text_argument(parser, args)
-            if args.command in {"preview", "demo-run", "real-run"}
+            if args.command in {"preview", "demo-preview", "demo-run", "real-run", "generate"}
             else None
         )
-        if args.command == "preview":
+        if args.command in {"preview", "generate"}:
+            from .workbench import Workbench
+            workbench = Workbench(Path(args.data_root).absolute())
+            result = getattr(workbench, args.command)(source_text)
+            # The desktop pipe may display a private destination. The console's
+            # public JSON retains its bounded path-free contract.
+            result.pop("destination", None)
+            payload = {"command": args.command, "status": "SUCCEEDED", **result}
+        elif args.command == "demo-preview":
             service = _build_service(args)
             startup = service.startup()
             assert source_text is not None
             preview = service.preview(source_text)
             payload = {
-                "command": "preview",
+                "command": "demo-preview",
                 "status": "READY",
+                "demo": {"mode": "DEMO_SILENCE_ONLY", "speech": False, "tokenizer_identity": DEMO_TOKENIZER_IDENTITY},
                 "startup_recovery": startup.public_payload(),
                 "preview": preview.public_payload(),
             }

@@ -8,7 +8,9 @@ conditions. Public upload requires approval of a concrete final candidate.
 The current source lane deliberately contains no engine checkout, model,
 tokenizer assets, codec weights, voice profile, reference audio, bundled
 playback runtime, Python runtime, CUDA runtime, native playback/library
-payload, launcher, installer, or generated output. Each payload requires its
+payload, or generated output. A first-party Python/Tk launcher and source
+installer are available as local candidates; they require separately installed
+Python/Tk. Each external payload requires its
 own exact dependency closure, license, notices, applicable use/distribution
 conditions, privacy and consent basis, and content hashes. An unresolved
 component blocks the operations that depend on it. The standard-library same-byte playback source

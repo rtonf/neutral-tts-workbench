@@ -1,6 +1,8 @@
 # Neutral TTS Workbench (development name)
 
-This is a neutral, source-only TTS development lane for eight bounded capabilities:
+This is a TTS desktop under development, with a local Python/Tk Windows installer
+candidate. Start with [the desktop guide](docs/DESKTOP_GUIDE.md) and
+[the current feature scope](docs/PRODUCT_SCOPE.md). The source provides:
 
 1. safe, previewable WAV filename templates with Windows-safe normalization
    and no-replace collision sequencing;
@@ -14,14 +16,13 @@ This is a neutral, source-only TTS development lane for eight bounded capabiliti
    for local internal source review;
 5. cancellation/crash reconciliation and versioned, integrity-checked data
    backup with automatic pre-restore safety backup and rollback;
-6. a source-only owned-files layout contract for synthetic install, update,
-   rollback, and owned-only uninstall testing, plus unsigned provenance and
-   clean-Windows acceptance schemas;
+6. a Python/Tk launcher and local source installer using owned-file install,
+   update, rollback and uninstall transactions;
 7. an optional, explicitly configured Irodori-TTS compatible backend and
    identity-checked tokenizer-only counter that keep model/runtime/reference
    assets outside the source package; and
-8. recovery-bound, hash-verified receipt history plus synchronous same-byte WAV
-   playback through the Windows standard library.
+8. a responsive desktop connecting setup, input, real-tokenizer preview,
+   generation, hash-verified history, playback, backup and recovery.
 
 The working display name is defined once in `src/neutral_tts/identity.py`. The
 Python module name is deliberately neutral. This repository is not an official
@@ -41,12 +42,19 @@ components may be constructed for acceptance testing. See
 [release status](docs/RELEASE_NO_GO.md) for the current boundaries.
 
 For source development with Python 3.11 or later, run commands from the source
-checkout with `PYTHONPATH=src`. Run a bounded preview with
-`python -m neutral_tts.cli preview --text-file input.txt`. `demo-run` with the
+checkout with `PYTHONPATH=src`. Run a synthetic preview with
+`python -m neutral_tts.cli demo-preview --text-file input.txt`. `demo-run` with the
 same input writes an explicitly labeled silence-only test WAV. The CLI accepts
 up to 4096 Unicode characters. `--text-file -` reads standard input and keeps
 the input text out of command arguments. Optional synthesis dependencies are
 separate from this standard-library workflow.
+
+For the ordinary real-tokenizer preview, complete the desktop setup and use
+`python -m neutral_tts.cli preview --data-root <data-folder> --text-file input.txt`.
+The corresponding `generate` command reuses the saved preview and rejects changed
+conditions. Real generation still requires reviewed engine/assets and a consented
+recording. See [tokenizer setup](docs/TOKENIZER_SETUP.md) for the separately pinned
+tokenizer environment; inference setup and its full dependency lock remain open.
 
 The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the
 application flow and explicit silence-only demo are documented in

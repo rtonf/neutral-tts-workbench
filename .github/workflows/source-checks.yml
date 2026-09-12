@@ -1,0 +1,27 @@
+name: Source checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  source:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Standard-library tests
+        env:
+          PYTHONPATH: src
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest discover -s tests -q
+      - name: Public source surface
+        run: python tools/scan_public_surface.py --root . --allowlist compliance/source-asset-allowlist.json --git-only
+      - name: Build local source installer candidate
+        shell: bash
+        run: |
+          mkdir -p .staging
+          python tools/build_windows_candidate.py --commit HEAD --destination .staging/windows-candidate

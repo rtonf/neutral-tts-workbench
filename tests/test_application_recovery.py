@@ -143,7 +143,7 @@ cli.main([
             self.assertEqual(len(before), 1)
             before_bytes = before[0].read_bytes()
 
-            code, payload = self.invoke(["preview", *self.common_args(root)])
+            code, payload = self.invoke(["demo-preview", *self.common_args(root)])
             self.assertEqual(code, 0)
             startup = payload["startup_recovery"]
             self.assertEqual(startup["status"], "VERIFIED")
@@ -192,7 +192,7 @@ cli.main([
             self.assertEqual(len(before), 1)
             before_bytes = before[0].read_bytes()
 
-            code, payload = self.invoke(["preview", *self.common_args(root)])
+            code, payload = self.invoke(["demo-preview", *self.common_args(root)])
             self.assertEqual(code, 0)
             startup = payload["startup_recovery"]
             self.assertEqual(startup["status"], "RECOVERED")
@@ -256,7 +256,7 @@ raise SystemExit(cli.main([
                     time.sleep(0.02)
                 self.assertIsNone(process.poll())
 
-                code, payload = self.invoke(["preview", *self.common_args(root)])
+                code, payload = self.invoke(["demo-preview", *self.common_args(root)])
                 self.assertEqual(code, 2)
                 self.assertEqual(payload["status"], "ERROR")
             finally:
@@ -268,7 +268,7 @@ raise SystemExit(cli.main([
                     stdout, stderr = process.communicate(timeout=5)
             self.assertEqual(process.returncode, 0, msg=stdout + stderr)
 
-            code, payload = self.invoke(["preview", *self.common_args(root)])
+            code, payload = self.invoke(["demo-preview", *self.common_args(root)])
             self.assertEqual(code, 0)
             self.assertEqual(payload["startup_recovery"]["status"], "VERIFIED")
 

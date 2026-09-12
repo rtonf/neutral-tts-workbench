@@ -1,5 +1,13 @@
 # Feature contracts
 
+The product scope and current desktop integration are specified in
+[PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) and [DESKTOP_GUIDE.md](DESKTOP_GUIDE.md).
+The lower-level contracts below retain their boundaries. `Workbench` adds
+shared data ownership, persisted settings/dictionary, preview tickets and
+verified-history backup/restore around those APIs. Ordinary CLI `preview` now
+uses the configured real tokenizer; the synthetic entry is `demo-preview`.
+The local source installer does not imply clean-device or binary acceptance.
+
 ## Safe WAV filename templates
 
 The template engine accepts only these placeholders:

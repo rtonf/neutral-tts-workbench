@@ -296,7 +296,10 @@ class LocalRuntimeConfig:
             entry = rights.get(scope)
             if type(entry) is not dict or entry.get("reviewed") is not True:
                 raise LocalRuntimeError("A required rights review is incomplete.")
-            _digest(entry.get("evidence_sha256"))
+            evidence_digest = _digest(entry.get("evidence_sha256"))
+            if entry.get("reviewed_use") != scope or entry.get("unresolved") != []:
+                raise LocalRuntimeError("A rights review has unresolved scope questions.")
+            _read(_absolute(entry.get("evidence_path")), limit=MAX_CONFIG_BYTES, digest=evidence_digest)
         references = data["references"]
         if type(references) is not list or not 1 <= len(references) <= 4 or rights.get("references") != references:
             raise LocalRuntimeError("Reference audio is not bound to the rights record.")
@@ -313,7 +316,10 @@ class LocalRuntimeConfig:
                 _verify_asset(path, record)
 
     def verify_references(self):
-        _read(self.rights_path, limit=MAX_CONFIG_BYTES, digest=self.rights_digest)
+        rights = _object(_read(self.rights_path, limit=MAX_CONFIG_BYTES, digest=self.rights_digest))
+        for scope in ("local_execution", "recording_use", "voice_replication", "generated_audio_use"):
+            entry = rights[scope]
+            _read(_absolute(entry["evidence_path"]), limit=MAX_CONFIG_BYTES, digest=entry["evidence_sha256"])
         for path, digest in self.references:
             data = _read(path, limit=MAX_REFERENCE_BYTES, digest=digest)
             import io
@@ -336,6 +342,8 @@ class LocalRuntimeConfig:
 def load_local_runtime(path: Path):
     """Return a lazy binding after local byte/rights-record checks, without sampling."""
     from .runtime_binding import RealRuntimeBinding
+    from .tokenizer_runtime import tokenizer_identity
+    from .environment_binding import environment_digest
 
     config = LocalRuntimeConfig(path)
     counter = IrodoriTokenizerCounter.from_local_directory(
@@ -354,7 +362,8 @@ def load_local_runtime(path: Path):
     )
     return RealRuntimeBinding(
         token_counter=count, backend=IrodoriBackend(host),
-        tokenizer_identity=f"local-tokenizer-{config.digest[:16]}",
-        runtime_config_digest=config.digest, voice_rights_manifest_sha256=config.rights_digest,
+        tokenizer_identity=tokenizer_identity(config.assets, config.vocab, config.bos),
+        runtime_config_digest=hashlib.sha256((config.digest + environment_digest()).encode()).hexdigest(),
+        voice_rights_manifest_sha256=config.rights_digest,
         device_class=f"local-{config.device}-{config.precision}",
     )

@@ -49,11 +49,14 @@ class LocalRuntimeTests(unittest.TestCase):
             wav.setframerate(48000)
             wav.writeframes(b"\x01\x00" * 480)
         references = [{"path": str(reference), "sha256": sha(reference.read_bytes())}]
+        evidence = root / "evidence.txt"
+        evidence.write_bytes(b"synthetic fixture only")
         rights = {
             "schema_version": "neutral-local-rights-v1",
             "asset_inventory_sha256": sha(json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()),
             "references": references,
-            **{scope: {"reviewed": True, "evidence_sha256": sha(b"synthetic fixture only")}
+            **{scope: {"reviewed": True, "evidence_sha256": sha(b"synthetic fixture only"),
+                       "evidence_path": str(evidence), "reviewed_use": scope, "unresolved": []}
                for scope in ("local_execution", "recording_use", "voice_replication", "generated_audio_use")},
         }
         rights_path = root / "rights.json"
@@ -123,7 +126,8 @@ class LocalRuntimeTests(unittest.TestCase):
             path, *_ = self.fixture(Path(name))
             with patch("importlib.import_module", side_effect=AssertionError("unexpected import")):
                 binding = load_local_runtime(path)
-            self.assertEqual(binding.runtime_config_digest, sha(path.read_bytes()))
+            from neutral_tts.environment_binding import environment_digest
+            self.assertEqual(binding.runtime_config_digest, sha((sha(path.read_bytes()) + environment_digest()).encode()))
 
     def test_module_entrypoint_generates_with_the_default_host(self):
         with tempfile.TemporaryDirectory() as name:

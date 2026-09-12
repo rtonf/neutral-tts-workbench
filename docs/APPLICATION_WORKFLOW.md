@@ -262,7 +262,7 @@ Run a privacy-bounded preview:
 
 ```powershell
 $env:PYTHONPATH = ".\src"
-python -m neutral_tts.cli preview `
+python -m neutral_tts.cli demo-preview `
   --text "Synthetic example" `
   --output-dir .staging/demo-output `
   --staging-dir .staging/demo-stage

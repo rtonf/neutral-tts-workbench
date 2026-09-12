@@ -523,6 +523,7 @@ def build_manifest(
     source_commit: str,
     source_tree: str,
     app_root_name: str,
+    verification_scope: str = DEMO_VERIFICATION_SCOPE,
 ) -> dict[str, Any]:
     """Create a deterministic source-only owned-files manifest."""
 
@@ -531,7 +532,7 @@ def build_manifest(
     manifest: dict[str, Any] = {
         "schema_version": INSTALL_LAYOUT_SCHEMA,
         "candidate_id": _validate_candidate_id(candidate_id),
-        "verification_scope": DEMO_VERIFICATION_SCOPE,
+        "verification_scope": verification_scope,
         "source": {
             "commit": _validate_git_object(source_commit, label="source commit"),
             "tree": _validate_git_object(source_tree, label="source tree"),
@@ -565,8 +566,8 @@ def validate_manifest(value: object) -> dict[str, Any]:
     if value.get("schema_version") != INSTALL_LAYOUT_SCHEMA:
         raise InstallIntegrityError("install manifest schema is unsupported")
     _validate_candidate_id(value.get("candidate_id"))
-    if value.get("verification_scope") != DEMO_VERIFICATION_SCOPE:
-        raise InstallIntegrityError("install manifest is outside demo verification scope")
+    if value.get("verification_scope") not in {DEMO_VERIFICATION_SCOPE, "LOCAL_WINDOWS_SOURCE_CANDIDATE"}:
+        raise InstallIntegrityError("install manifest verification scope is unsupported")
     source = value.get("source")
     if not isinstance(source, dict) or set(source) != {"commit", "tree"}:
         raise InstallIntegrityError("install manifest source provenance is invalid")
@@ -1047,6 +1048,7 @@ def create_test_layout(
     source_tree: str,
     app_root_name: str,
     fault_hook: FaultHook | None = None,
+    verification_scope: str = DEMO_VERIFICATION_SCOPE,
 ) -> dict[str, Any]:
     """Build a fresh source-only test layout; this is not an installer."""
 
@@ -1059,6 +1061,7 @@ def create_test_layout(
         source_commit=source_commit,
         source_tree=source_tree,
         app_root_name=app_root_name,
+        verification_scope=verification_scope,
     )
     stage = _fresh_sibling(destination, "layout-stage")
     try:

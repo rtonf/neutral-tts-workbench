@@ -135,12 +135,15 @@ class IrodoriTokenizerCounter:
             loader = getattr(tokenizer_type, "from_pretrained", None)
             if not callable(loader):
                 raise IrodoriBackendError("tokenizer package contract is unavailable")
-            return loader(
+            tokenizer = loader(
                 str(fixed_directory),
                 local_files_only=True,
                 use_fast=True,
                 trust_remote_code=False,
             )
+            if getattr(tokenizer, "is_fast", False) is not True:
+                raise IrodoriBackendError("A verified fast tokenizer is required; the installed loader is incompatible.")
+            return tokenizer
 
         return cls(
             load,

@@ -21,7 +21,7 @@ class CliE2ETests(unittest.TestCase):
             common = ["--output-dir", str(root / "output"), "--staging-dir", str(root / "stage")]
             for value in (str(source), "-"):
                 with mock.patch("sys.stdin", io.StringIO("private synthetic input")):
-                    code, payload = self.invoke(["preview", "--text-file", value, *common])
+                    code, payload = self.invoke(["demo-preview", "--text-file", value, *common])
                 self.assertEqual(code, 0)
                 self.assertNotIn("private synthetic input", repr(payload))
                 self.assertNotIn(str(root), repr(payload))
@@ -71,7 +71,7 @@ class CliE2ETests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             args = ["--text", "raw private text", "--output-dir", str(root / "out"), "--staging-dir", str(root / "stage")]
-            code, preview = self.invoke(["preview", *args])
+            code, preview = self.invoke(["demo-preview", *args])
             self.assertEqual(code, 0)
             self.assertEqual(preview["status"], "READY")
             self.assertEqual(preview["startup_recovery"]["operation"], "STARTUP_RECOVERY")
@@ -118,7 +118,7 @@ class CliE2ETests(unittest.TestCase):
                     "_RecoveryOwner",
                     side_effect=replace_before_owner,
                 ):
-                    code, payload = self.invoke(["preview", *args])
+                    code, payload = self.invoke(["demo-preview", *args])
 
                 self.assertEqual(code, 2)
                 self.assertEqual(payload["status"], "ERROR")
@@ -129,12 +129,12 @@ class CliE2ETests(unittest.TestCase):
                         "message": "The request could not be completed.",
                     },
                 )
-                retry_code, retry_payload = self.invoke(["preview", *args])
+                retry_code, retry_payload = self.invoke(["demo-preview", *args])
                 self.assertEqual(retry_code, 0)
                 self.assertEqual(retry_payload["status"], "READY")
 
     def test_optional_lifecycle_options_reject_before_cli_side_effects(self):
-        for command in ("preview", "demo-run"):
+        for command in ("demo-preview", "demo-run"):
             for configuration, lifecycle_args in (
                 ("restore", ("--restore-live-data-root", "{target}")),
                 (
@@ -218,7 +218,7 @@ class CliE2ETests(unittest.TestCase):
         ):
             code, payload = self.invoke(
                 [
-                    "preview",
+                    "demo-preview",
                     "--text",
                     "raw private text",
                     "--output-dir",

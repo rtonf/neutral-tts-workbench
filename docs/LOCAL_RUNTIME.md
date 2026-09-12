@@ -53,8 +53,10 @@ records are limited to 256 KiB. Keep these files outside the public repository.
 The rights record uses schema `neutral-local-rights-v1`. It contains the exact
 `references` list, `asset_inventory_sha256`, and separate `local_execution`,
 `recording_use`, `voice_replication`, and `generated_audio_use` review entries.
-Each entry contains `reviewed: true` and the SHA-256 of the evidence reviewed
-as `evidence_sha256`. Calculate the inventory digest from the UTF-8 bytes of
+Each entry contains `reviewed: true`, `reviewed_use` equal to that scope,
+`unresolved: []`, the absolute `evidence_path`, and `evidence_sha256`. The host
+opens and hashes the actual evidence file during admission and reference checks;
+a digest alone is rejected. Calculate the inventory digest from the UTF-8 bytes of
 `json.dumps(assets, sort_keys=True, separators=(",", ":"))`.
 
 These are operator review records, not an automated license decision. Hashes
