@@ -108,11 +108,19 @@ only `settings`, `history`, `dictionary`, and `voice_profiles`, accepts only its
 bounded JSON data types, and ignores unrelated root files. It never selects an
 entire user directory, audio, model/runtime payloads, or executables. Backup
 publication and the caller-selected pre-restore safety archive are fresh-file,
-no-overwrite operations. Restore validates the archive and available workspace
-capacity before delegating mutation, then reuses the existing safety snapshot,
-directory guards, rollback journal, final integrity verification, and explicit
-recovery operation. Its JSON result reports only bounded counts, digests, and a
-terminal state; local paths and exception text are discarded.
+no-overwrite operations. One OS-released owner lock serializes backup, restore,
+and recovery for the selected root. Restore validates the admitted archive,
+checks incoming workspace capacity and pre-restore snapshot capacity on their
+actual filesystems, then reuses the existing safety snapshot, directory guards,
+rollback journal, final integrity verification, and explicit recovery operation.
+A durable `completed` journal is a committed restore: recovery verifies and
+finishes cleanup instead of rolling it back. Interrupted rollback records intent
+before each rename so another explicit recovery can infer a rename completed
+before process death. The JSON result reports only bounded counts, digests, and a
+terminal state; local paths and exception text are discarded. `COMPLETED` and
+`ROLLED_BACK` are clean terminal states. A `*_CLEANUP_PENDING` or
+`*_INTEGRITY_UNVERIFIED` result is reported as incomplete and retains the journal
+for another explicit recovery; an active owner is reported as busy.
 
 For a synthetic or separately approved data root, invoke the host explicitly:
 

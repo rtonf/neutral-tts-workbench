@@ -18,17 +18,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .backup_restore import (
+    BackupArtifact,
     BackupManifest,
-    create_backup,
-    reconcile_restore,
-    restore_backup,
+    BackupRestoreBusy,
+    RESTORE_CAPACITY_RESERVE_BYTES,
+    create_backup_artifact,
+    reconcile_restore_result,
+    restore_backup_result,
     validate_backup,
 )
-from .fs_safety import DirectoryGuard
 
 
 HOST_SCHEMA = "neutral-tts-backup-host-v1"
-RESTORE_WORKSPACE_RESERVE_BYTES = 1024 * 1024
+RESTORE_WORKSPACE_RESERVE_BYTES = RESTORE_CAPACITY_RESERVE_BYTES
 
 
 class BackupRestoreHostError(RuntimeError):
@@ -60,6 +62,15 @@ def _manifest_payload(manifest: BackupManifest) -> dict[str, object]:
     }
 
 
+def _artifact_payload(artifact: BackupArtifact) -> dict[str, object]:
+    payload = _manifest_payload(artifact.manifest)
+    payload.update(
+        archive_sha256=artifact.archive_sha256,
+        archive_size=artifact.archive_size,
+    )
+    return payload
+
+
 @dataclass(frozen=True, slots=True)
 class BackupRestoreHost:
     """Bind one explicit command to existing guarded lifecycle primitives."""
@@ -76,19 +87,9 @@ class BackupRestoreHost:
             or _exists(archive)
         ):
             raise BackupRestoreHostError("backup endpoints are unavailable")
-        with DirectoryGuard(root) as root_guard, DirectoryGuard(
-            archive.parent
-        ) as archive_parent_guard:
-            if root_guard.contains_final(archive.parent.resolve(strict=True)):
-                raise BackupRestoreHostError("backup output must be outside the data root")
-            created = create_backup(root, archive)
-            root_guard.assert_unchanged()
-            archive_parent_guard.assert_unchanged()
-            manifest = validate_backup(created)
-            root_guard.assert_unchanged()
-            archive_parent_guard.assert_unchanged()
+        artifact = create_backup_artifact(root, archive)
         return {
-            "archive": _manifest_payload(manifest),
+            "archive": _artifact_payload(artifact),
             "terminal_state": "COMPLETED",
         }
 
@@ -109,67 +110,38 @@ class BackupRestoreHost:
             or _exists(safety)
         ):
             raise BackupRestoreHostError("restore endpoints are unavailable")
-        with (
-            DirectoryGuard(archive.parent) as archive_parent_guard,
-            DirectoryGuard(root.parent) as root_parent_guard,
-            DirectoryGuard(root) as root_guard,
-            DirectoryGuard(safety.parent) as safety_parent_guard,
-        ):
-            manifest = validate_backup(archive)
-            archive_parent_guard.assert_unchanged()
-            root_parent_guard.assert_unchanged()
-            root_guard.assert_unchanged()
-            safety_parent_guard.assert_unchanged()
-            required = (
-                sum(entry.size for entry in manifest.entries)
-                + RESTORE_WORKSPACE_RESERVE_BYTES
-            )
-            available = self.capacity_probe(root.parent)
-            if (
-                isinstance(available, bool)
-                or not isinstance(available, int)
-                or available < required
-            ):
-                raise BackupRestoreHostError("restore capacity is unavailable")
-            archive_parent_guard.assert_unchanged()
-            root_parent_guard.assert_unchanged()
-            root_guard.assert_unchanged()
-            safety_parent_guard.assert_unchanged()
-            created_safety = restore_backup(
-                archive,
-                root,
-                safety_backup_path=safety,
-                expected_manifest=manifest,
-            )
-            archive_parent_guard.assert_unchanged()
-            root_parent_guard.assert_unchanged()
-            root_guard.assert_unchanged()
-            safety_parent_guard.assert_unchanged()
-            safety_manifest = validate_backup(created_safety)
+        manifest = validate_backup(archive)
+        result = restore_backup_result(
+            archive,
+            root,
+            safety_backup_path=safety,
+            expected_manifest=manifest,
+            capacity_probe=self.capacity_probe,
+        )
         return {
-            "restored": _manifest_payload(manifest),
-            "safety_backup": _manifest_payload(safety_manifest),
-            "terminal_state": "COMPLETED",
+            "restored": _manifest_payload(result.restored_manifest),
+            "safety_backup": _artifact_payload(result.safety_backup),
+            "terminal_state": result.terminal_state,
         }
 
     def recover(self, data_root: Path) -> dict[str, object]:
         root = _absolute(data_root)
         if root.parent == root or not root.is_dir():
             raise BackupRestoreHostError("recovery endpoint is unavailable")
-        with DirectoryGuard(root.parent) as parent_guard, DirectoryGuard(
-            root
-        ) as root_guard:
-            reconciled = reconcile_restore(root)
-            parent_guard.assert_unchanged()
-            root_guard.assert_unchanged()
+        result = reconcile_restore_result(root)
         return {
-            "reconciled": reconciled,
-            "terminal_state": "RECOVERED" if reconciled else "NO_PENDING_RESTORE",
+            "reconciled": result.reconciled,
+            "terminal_state": result.terminal_state,
         }
 
 
+class _FixedJsonArgumentParser(argparse.ArgumentParser):
+    def error(self, _message: str) -> None:
+        raise BackupRestoreHostError("backup/restore arguments are invalid")
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="neutral-tts-backup")
+    parser = _FixedJsonArgumentParser(prog="neutral-tts-backup")
     commands = parser.add_subparsers(dest="command", required=True)
 
     backup = commands.add_parser("backup")
@@ -192,9 +164,16 @@ def main(
     capacity_probe: Callable[[Path], int] | None = None,
 ) -> int:
     parser = _parser()
-    args = parser.parse_args(argv)
-    host = BackupRestoreHost(capacity_probe or _available_bytes)
+    arguments = sys.argv[1:] if argv is None else argv
+    command = (
+        arguments[0]
+        if arguments and arguments[0] in {"backup", "restore", "recover"}
+        else "unknown"
+    )
     try:
+        args = parser.parse_args(arguments)
+        command = args.command
+        host = BackupRestoreHost(capacity_probe or _available_bytes)
         if args.command == "backup":
             result = host.backup(
                 _absolute(args.data_root),
@@ -212,12 +191,29 @@ def main(
             "command": args.command,
             "result": result,
             "schema_version": HOST_SCHEMA,
-            "status": "SUCCEEDED",
+            "status": (
+                "INCOMPLETE"
+                if str(result.get("terminal_state", "")).endswith(
+                    ("_PENDING", "_UNVERIFIED")
+                )
+                else "SUCCEEDED"
+            ),
         }
-        code = 0
+        code = 3 if payload["status"] == "INCOMPLETE" else 0
+    except BackupRestoreBusy:
+        payload = {
+            "command": command,
+            "error": {
+                "code": "BACKUP_RESTORE_BUSY",
+                "message": "Another backup/restore operation is active.",
+            },
+            "schema_version": HOST_SCHEMA,
+            "status": "ERROR",
+        }
+        code = 2
     except Exception:
         payload = {
-            "command": args.command,
+            "command": command,
             "error": {
                 "code": "BACKUP_RESTORE_REJECTED",
                 "message": "The requested backup/restore operation could not be completed.",
