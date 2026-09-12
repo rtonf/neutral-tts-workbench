@@ -43,7 +43,7 @@ class DistributionLedgerTests(unittest.TestCase):
                 ):
                     self.assertEqual(public[field], locked[field])
 
-    def test_distribution_gates_are_separate_and_all_fail_closed(self) -> None:
+    def test_source_license_does_not_approve_binary_or_external_payloads(self) -> None:
         ledger = json.loads(
             (ROOT / "compliance" / "distribution-gates.public.json").read_text(encoding="utf-8")
         )
@@ -55,6 +55,11 @@ class DistributionLedgerTests(unittest.TestCase):
         self.assertEqual(set(gates), expected)
         self.assertEqual(ledger["release_decision"], "NO_GO_PUBLIC_BINARY")
         self.assertIsNone(ledger["decision_authority"])
+        source = gates.pop("source_license")
+        self.assertEqual(source["status"], "APPROVED")
+        self.assertEqual(source["approval_authority"], "rtonf")
+        self.assertIn("MIT License", (ROOT / "LICENSE").read_text(encoding="utf-8"))
+        self.assertTrue((ROOT / source["approval_record"]).is_file())
         for gate in gates.values():
             self.assertNotIn(gate["status"], {"APPROVED", "PASSED"})
             self.assertIsNone(gate["approval_authority"])

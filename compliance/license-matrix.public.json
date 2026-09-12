@@ -12,13 +12,13 @@
       "source_url": null,
       "artifact_url": null,
       "sha256": null,
-      "license_spdx": "NOASSERTION",
-      "license_status": "BLOCKED_PENDING_SOURCE_LICENSE",
-      "redistribution_status": "BLOCKED_PENDING_SOURCE_LICENSE",
-      "notice_required": null,
-      "notice_status": "UNKNOWN_PENDING_SOURCE_LICENSE",
-      "approval_status": "NOT_APPROVED",
-      "approval_authority": null
+      "license_spdx": "MIT",
+      "license_status": "APPROVED",
+      "redistribution_status": "PERMITTED_UNDER_MIT",
+      "notice_required": true,
+      "notice_status": "PRESENT",
+      "approval_status": "APPROVED",
+      "approval_authority": "rtonf"
     },
     {
       "component_id": "irodori-tts-compatibility",

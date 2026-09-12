@@ -1,4 +1,4 @@
-"""Standard-library CLI for preview, demo, and host-injected real runs."""
+"""Standard-library CLI for preview, demo, and explicitly configured local runs."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import stat
 import sys
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -22,52 +21,21 @@ from .filename_templates import DEFAULT_TEMPLATE, FilenameContext
 from .estimation import Calibration, calibration_from_receipts, make_calibration_key
 from .planning import PausePolicy, PlanSettings, normalize_public_id
 from .playback import WinsoundPlayback
+from .runtime_binding import RealRuntimeBinding
 
 
 DEMO_TOKENIZER_IDENTITY = "demo-tokenizer-v1"
+MAX_INPUT_CHARACTERS = 4096
 
 
-@dataclass(frozen=True, slots=True)
-class RealRuntimeBinding:
-    """Public-safe identities plus lazy host objects for one real run.
+class _CLIUsageError(ValueError):
+    pass
 
-    A machine-local host reads and verifies the private runtime configuration,
-    then returns this binding.  Constructing the binding must not create an
-    inference runtime; only ``backend.generate`` may do that.
-    """
 
-    token_counter: Callable[[str], int]
-    backend: object
-    tokenizer_identity: str
-    runtime_config_digest: str
-    voice_rights_manifest_sha256: str
-    device_class: str = "unknown-device"
-
-    def __post_init__(self) -> None:
-        if not callable(self.token_counter):
-            raise TypeError("real token counter must be callable")
-        object.__setattr__(
-            self,
-            "tokenizer_identity",
-            normalize_public_id(
-                self.tokenizer_identity, label="tokenizer identity"
-            ),
-        )
-        object.__setattr__(
-            self,
-            "device_class",
-            normalize_public_id(self.device_class, label="device class"),
-        )
-        for value in (
-            self.runtime_config_digest,
-            self.voice_rights_manifest_sha256,
-        ):
-            if (
-                not isinstance(value, str)
-                or len(value) != 64
-                or any(character not in "0123456789abcdef" for character in value)
-            ):
-                raise ValueError("real runtime binding digest is invalid")
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse's default error contains arbitrary command-line values.
+        raise _CLIUsageError("Invalid command arguments.")
 
 
 def demo_token_counter(text: str) -> int:
@@ -139,8 +107,20 @@ def _safe_private_file(path_value: str, *, label: str) -> Path:
 
 def _text_argument(parser: argparse.ArgumentParser, args: argparse.Namespace) -> str:
     value = args.text
+    if args.text_file is not None:
+        if value is not None:
+            raise ValueError("Use one source input.")
+        if args.text_file == "-":
+            value = sys.stdin.read(MAX_INPUT_CHARACTERS + 1)
+        else:
+            from .local_runtime import _read
+
+            path = _safe_private_file(args.text_file, label="text input")
+            value = _read(path, limit=4 * MAX_INPUT_CHARACTERS + 3).decode("utf-8-sig")
     if value is None:
         parser.error("--text or a positional text value is required")
+    if not value.strip() or len(value) > MAX_INPUT_CHARACTERS:
+        raise ValueError("Text must contain between 1 and 4096 characters.")
     return value
 
 
@@ -208,7 +188,7 @@ def _build_service(
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="neutral-tts")
+    parser = _ArgumentParser(prog="neutral-tts")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     def operational_arguments(sub: argparse.ArgumentParser) -> None:
@@ -236,6 +216,7 @@ def _parser() -> argparse.ArgumentParser:
             help="source text (never emitted in public JSON)",
         )
         operational_arguments(sub)
+        sub.add_argument("--text-file", help="UTF-8 input file; use - to read standard input")
         if command == "real-run":
             sub.add_argument("--runtime-config", required=True)
     for command in ("startup", "history", "play"):
@@ -255,7 +236,13 @@ def main(
     playback: WinsoundPlayback | None = None,
 ) -> int:
     parser = _parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except _CLIUsageError:
+        print(json.dumps({"status": "ERROR", "error": {
+            "code": "INVALID_ARGUMENTS", "message": "Invalid command arguments."
+        }}, sort_keys=True, separators=(",", ":")))
+        return 2
     # argparse cannot use the same dest for positional and optional values;
     # combine them privately, with the explicit flag taking precedence.
     if args.command in {"preview", "demo-run", "real-run"}:
@@ -304,7 +291,9 @@ def main(
             }
         elif args.command == "real-run":
             if real_runtime_factory is None:
-                raise RuntimeError("a machine-local runtime host is required")
+                from .local_runtime import load_local_runtime
+
+                real_runtime_factory = load_local_runtime
             runtime_config = _safe_private_file(
                 args.runtime_config, label="runtime configuration"
             )

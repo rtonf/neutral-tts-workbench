@@ -159,13 +159,15 @@ as they are emitted, verifies the closed staging file has the same bytes, and
 returns that digest for the application/recovery handoff. Runtime cleanup runs
 on success, ordinary failure, and interruption.
 
-The command parser exposes `real-run`, while construction remains an explicit
-host boundary: a wrapper calls `neutral_tts.cli.main(...,
-real_runtime_factory=...)` and returns a `RealRuntimeBinding`. The binding
+The command parser exposes `real-run` through the supplied local runtime host.
+An embedding application can supply `real_runtime_factory` explicitly for a
+different reviewed integration or for synthetic tests. Both return a
+`RealRuntimeBinding`. The binding
 contains only a tokenizer callback, backend object, bounded public identities,
 and SHA-256 bindings for machine-local runtime configuration and voice-rights
-evidence. The console entry point has no implicit plugin loader or arbitrary
-module runner and rejects `real-run` when no host factory is supplied. Before
+evidence. The default host validates explicit private configuration and assets
+and imports the installed compatible inference package only during generation.
+Its configuration and admission limits are in `docs/LOCAL_RUNTIME.md`. Before
 calling that factory, `real-run` rejects reserved lifecycle arguments, checks
 the private configuration file boundary, performs a model-free preview/root
 preflight, and reconciles existing recovery/history state. A rejected root,

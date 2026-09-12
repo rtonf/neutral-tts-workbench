@@ -1,9 +1,13 @@
 # Clean public-source lane policy
 
-These instructions apply to the root agent and every delegated agent in this
+These instructions apply to the owning assistant working in this
 repository. This repository is a neutral, source-only development lane whose
 public identity and capabilities are defined entirely by its current target
 state.
+
+The owning assistant performs all implementation and review directly. Do not
+start, resume, delegate to, or use subagents, including read-only reviewers.
+Self-verification must not be described as independent review.
 
 ## Protected and reference trees
 
@@ -59,55 +63,18 @@ state.
 ## Release status
 
 - This lane is source-only and `NO-GO` for public binary release.
-- Do not build or publish a model/runtime bundle, installer, GitHub release, or
-  release upload while any redistribution, license, notice, signature, clean
-  Windows, recovery, offline, voice-rights, or human-acceptance gate is open.
+- Build and test local distribution candidates in isolated development
+  locations using components with verified provenance and applicable rights.
+  Candidate construction precedes clean-device acceptance. Keep runtime and
+  model payloads outside the source repository and protected installations.
+- Public repository creation, push, release upload, and publication require
+  the user's approval of the exact destination and final candidate. External
+  messages, paid services, certificate purchases, and host security changes
+  require their own explicit authorization.
 - Do not call a source test, local run, or current-device result Production.
-- Unknown legal interpretation remains a blocker; agents do not make legal
-  conclusions or infer redistribution permission.
-
-## Required subagent model and dispatch evidence
-
-- Every project subagent must run the effective model `gpt-5.6-luna`.
-- Allowed reasoning efforts are exactly `medium`, `high`, and `max`.
-- Every spawn must explicitly set `model: gpt-5.6-luna`, the chosen reasoning
-  effort, and `fork_turns: none` or the smallest bounded history needed.
-- Every delegation prompt must begin with:
-
-  ```text
-  MODEL REQUIREMENT: gpt-5.6-luna
-  REASONING EFFORT: medium|high|max
-  SELECTION REASON: <why this level fits>
-  OWNERSHIP: <files and responsibility>
-  ```
-
-- A code-changing agent must be told that other agents share the codebase, must
-  not revert their changes, and must adapt to concurrent edits.
-- Self-report is not model evidence. The parent must inspect the effective local
-  turn context and record `turn_context.model` and `turn_context.effort` in the
-  single ignored delegation audit log immediately after dispatch and before
-  using the agent's work. If the effective settings differ, stop that agent
-  and correct the dispatch; do not accept a later self-report. A result without observable effective
-  evidence is not gate evidence and must be independently reproduced.
-- Use `medium` for bounded inventory, mechanical tests, straightforward docs,
-  or a small contract. Use `high` for implementation, integration design,
-  root-cause work, and independent code review. Use `max` only for foundational
-  architecture, security/data-integrity blockers, release blockers, or the
-  final adversarial release review.
-- Keep at most two delegated agents active. Give each agent disjoint file
-  ownership. Limit review/fix work to two cycles and do not allow unbounded
-  child spawning.
-- Recovery/data-integrity and release-boundary work requires a final adversarial
-  reviewer at `max`. Any serious finding must be fixed and returned to that
-  same reviewer once; a second serious finding in the same category stops the
-  candidate rather than starting an unbounded cycle.
-- A review cycle means a completed examination of a fixed candidate. A tool
-  that cannot start because a prerequisite is missing is an environment
-  failure, not a completed review. Record it separately and use an available
-  read-only review method. Preserve the independent post-fix verification.
-- Do not create implementation subagents for the current correction slice.
-  The owning task implements it and may add one independent `max` reviewer at
-  the candidate boundary. Reviewers are read-only and may not spawn children.
+- Unresolved rights block the affected use or distribution operation. Continue
+  independent implementation and synthetic verification. Record uncertainty
+  without inventing permission or equating missing evidence with prohibition.
 
 ## Current correction sequence
 
@@ -124,16 +91,17 @@ state.
   the current source-only bill of materials.
 - Freeze each review candidate by content identity. A later change to reviewed
   implementation or configuration invalidates the affected acceptance claim.
-- The task implements ordinary fixes; the coordinating task owns sequencing
-  and scope decisions; a separate reviewer judges the fixed candidate. Do not
-  describe the coordinator's own design approval as independent acceptance.
+- The owning assistant implements fixes and verifies the fixed candidate
+  directly, including failure injection at data-integrity boundaries.
 
 ## Stop and reporting rules
 
-- Stop and redesign after the same failure category occurs twice.
-- One blocker has a 90-minute total limit across filenames, stages, agents, and
-  approaches. At 45 minutes report: hypothesis, real end-to-end attempt, new
-  facts, remaining budget, and `CONTINUE` or `STOP`.
+- Revise the hypothesis and state transitions when a failure recurs. Elapsed
+  time or review counts alone do not end authorized implementation work.
+- Stop affected operations for unexpected protected-data changes, exposed
+  credentials, concrete data hazards, unavailable required environments, or
+  unresolved decisions reserved to the user. Continue other work and present
+  the exact missing decision or environmental requirement.
 - Keep source completion, focused tests, full tests, clean commit, package,
   clean-device use, and human acceptance as separate states.
 - Report each gate with facts, changed files, tests, remaining `NO-GO` items,

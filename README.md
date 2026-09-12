@@ -17,7 +17,7 @@ This is a neutral, source-only TTS development lane for eight bounded capabiliti
 6. a source-only owned-files layout contract for synthetic install, update,
    rollback, and owned-only uninstall testing, plus unsigned provenance and
    clean-Windows acceptance schemas;
-7. an optional, host-injected Irodori-TTS compatible backend and
+7. an optional, explicitly configured Irodori-TTS compatible backend and
    identity-checked tokenizer-only counter that keep model/runtime/reference
    assets outside the source package; and
 8. recovery-bound, hash-verified receipt history plus synchronous same-byte WAV
@@ -27,16 +27,26 @@ The working display name is defined once in `src/neutral_tts/identity.py`. The
 Python module name is deliberately neutral. This repository is not an official
 or partnered product and contains no synthesis engine, voice/reference asset,
 model/runtime payload, or public binary payload. The compatible backend is a
-source adapter: a machine-local host must provide and verify every optional
-runtime object and asset before it can run.
+source adapter. The supplied local host verifies an explicit asset inventory
+and private rights-record bindings before using an installed inference package.
+See [local runtime configuration](docs/LOCAL_RUNTIME.md).
 
 ## Current status
 
-The lane is `NO-GO` for public publication, public release packaging,
-installers, model/runtime bundling, and Production claims. A local,
-source-only `INTERNAL_SOURCE_REVIEW` archive is permitted as compliance
-evidence; it is not redistribution approval or a release candidate. See
-`docs/RELEASE_NO_GO.md` and the public license matrix for the unresolved gates.
+The project source is licensed under [MIT](LICENSE), copyright 2026 rtonf.
+Third-party components keep their own conditions. Public release readiness is
+`NO-GO`: real-model, dependency-rights, installer, clean-device, signature, and
+human acceptance work remains. Isolated local candidates using verified
+components may be constructed for acceptance testing. See
+[release status](docs/RELEASE_NO_GO.md) for the current boundaries.
+
+For source development with Python 3.11 or later, run commands from the source
+checkout with `PYTHONPATH=src`. Run a bounded preview with
+`python -m neutral_tts.cli preview --text-file input.txt`. `demo-run` with the
+same input writes an explicitly labeled silence-only test WAV. The CLI accepts
+up to 4096 Unicode characters. `--text-file -` reads standard input and keeps
+the input text out of command arguments. Optional synthesis dependencies are
+separate from this standard-library workflow.
 
 The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the
 application flow and explicit silence-only demo are documented in

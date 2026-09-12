@@ -1,20 +1,21 @@
 # Release status: NO-GO
 
-This repository is not a public binary release candidate. It may be used for
-neutral source development and synthetic tests only.
+This repository is not a public binary release candidate. Project source is
+MIT licensed, copyright 2026 rtonf. Source development, synthetic testing, and
+isolated candidate construction can proceed within each component's verified
+conditions. Public upload requires approval of a concrete final candidate.
 
 The current source lane deliberately contains no engine checkout, model,
 tokenizer assets, codec weights, voice profile, reference audio, bundled
 playback runtime, Python runtime, CUDA runtime, native playback/library
-payload, launcher, installer, or generated output. Adding any of those
-components is blocked until its exact dependency closure, license, notices,
-redistribution permission, privacy and consent basis, and content hashes have
-been independently approved. The standard-library same-byte playback source
+payload, launcher, installer, or generated output. Each payload requires its
+own exact dependency closure, license, notices, applicable use/distribution
+conditions, privacy and consent basis, and content hashes. An unresolved
+component blocks the operations that depend on it. The standard-library same-byte playback source
 contract does not approve or supply such a runtime payload.
 
 Current blockers include:
 
-- the project source has no approved distribution license yet;
 - Irodori-TTS compatibility does not establish endorsement or redistribution
   permission for its source, runtime, or related assets;
 - the SilentCipher checkpoint has no approved redistribution record here;
@@ -34,8 +35,10 @@ Current blockers include:
   synthetic tests, but they are not clean-device, installer, signing, or human
   acceptance evidence.
 
-Therefore do not create or publish an installer, release archive, GitHub
-repository/release, model/runtime bundle, or Production claim from this lane.
+Public repository creation, push, and Release upload remain subject to final
+candidate approval. Local test launchers and installer candidates using verified
+components may be built before clean-device acceptance. Candidate construction
+does not constitute public release approval.
 
 A deterministic ZIP explicitly marked `INTERNAL_SOURCE_REVIEW` may be created
 locally under ignored staging to verify source-only packaging. That ZIP is

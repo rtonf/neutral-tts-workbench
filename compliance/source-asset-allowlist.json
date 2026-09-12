@@ -6,6 +6,7 @@
     ".gitattributes",
     ".gitignore",
     "README.md",
+    "LICENSE",
     "pyproject.toml",
     "src/neutral_tts/**/*.py",
     "tests/**/*.py",
@@ -22,6 +23,8 @@
   "asset_paths": [],
   "disclosure_paths": [
     "README.md",
+    "src/neutral_tts/local_runtime.py",
+    "tests/test_local_runtime.py",
     "docs/FEATURE_CONTRACTS.md",
     "THIRD_PARTY_NOTICES.md",
     "docs/RELEASE_NO_GO.md",

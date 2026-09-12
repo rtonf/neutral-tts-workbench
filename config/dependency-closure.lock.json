@@ -5,13 +5,13 @@
   "project": {
     "id": "new-neutral-source-lane",
     "display_name": "Neutral TTS Workbench",
-    "license_spdx": "NOASSERTION",
-    "license_status": "BLOCKED_PENDING_SOURCE_LICENSE",
-    "redistribution_status": "BLOCKED_PENDING_SOURCE_LICENSE",
-    "notice_required": null,
-    "notice_status": "UNKNOWN_PENDING_SOURCE_LICENSE",
-    "approval_status": "NOT_APPROVED",
-    "approval_authority": null,
+    "license_spdx": "MIT",
+    "license_status": "APPROVED",
+    "redistribution_status": "PERMITTED_UNDER_MIT",
+    "notice_required": true,
+    "notice_status": "PRESENT",
+    "approval_status": "APPROVED",
+    "approval_authority": "rtonf",
     "public_distribution": false
   },
   "policy": {
@@ -22,7 +22,7 @@
   "source_candidate": {
     "audience": "INTERNAL_SOURCE_REVIEW",
     "public_distribution": false,
-    "reason": "Source review only while the project license and every external redistribution decision remain unresolved."
+    "reason": "Internal candidate verification; public upload and external payload decisions remain separate from the MIT source license."
   },
   "components": [
     {
@@ -33,13 +33,13 @@
       "wheel_url": null,
       "source_commit_or_version": "RESOLVED_AT_BUILD_FROM_EXACT_COMMIT_ARGUMENT",
       "sha256": null,
-      "license_spdx": "NOASSERTION",
-      "license_status": "BLOCKED_PENDING_SOURCE_LICENSE",
-      "redistribution_status": "BLOCKED_PENDING_SOURCE_LICENSE",
-      "notice_required": null,
-      "notice_status": "UNKNOWN_PENDING_SOURCE_LICENSE",
-      "approval_status": "NOT_APPROVED",
-      "approval_authority": null,
+      "license_spdx": "MIT",
+      "license_status": "APPROVED",
+      "redistribution_status": "PERMITTED_UNDER_MIT",
+      "notice_required": true,
+      "notice_status": "PRESENT",
+      "approval_status": "APPROVED",
+      "approval_authority": "rtonf",
       "bundle": true,
       "bundle_reason": "Source-only internal review candidate; not a third-party payload."
     },

@@ -140,7 +140,8 @@ descriptor read, compares that optional evidence, and passes the validated
 size/SHA-256 to recovery; recovery rehashes it before the durable `ready`
 state. These checks and strict receipt construction complete before `ready`.
 
-The optional Irodori-TTS compatible source adapter is host-injected and keeps
+The optional Irodori-TTS compatible source adapter accepts the supplied local
+runtime host or an explicitly injected host, and keeps
 optional imports, runtime resources, reference paths, and rights evidence out
 of public payloads. Its tokenizer counter validates the pinned vocabulary and
 BOS identity without creating an inference runtime. Generation requires

@@ -4,7 +4,7 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +13,37 @@ from neutral_tts.cli import DEMO_TOKENIZER_IDENTITY, main
 
 
 class CliE2ETests(unittest.TestCase):
+    def test_private_text_file_and_standard_input_preview_without_echo(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            source = root / "input.txt"
+            source.write_text("private synthetic input", encoding="utf-8-sig")
+            common = ["--output-dir", str(root / "output"), "--staging-dir", str(root / "stage")]
+            for value in (str(source), "-"):
+                with mock.patch("sys.stdin", io.StringIO("private synthetic input")):
+                    code, payload = self.invoke(["preview", "--text-file", value, *common])
+                self.assertEqual(code, 0)
+                self.assertNotIn("private synthetic input", repr(payload))
+                self.assertNotIn(str(root), repr(payload))
+
+    def test_oversized_or_conflicting_input_rejects_before_host_or_root_creation(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for options in (["--text", "x" * 4097], ["--text", "x", "--text-file", "-"], ["--text", "  "]):
+                code, _ = self.invoke(["real-run", "--runtime-config", str(root / "runtime.json"),
+                                      "--output-dir", str(root / "out"), "--staging-dir", str(root / "stage"), *options])
+                self.assertEqual(code, 2)
+                self.assertFalse((root / "out").exists())
+                self.assertFalse((root / "stage").exists())
+
+    def test_invalid_command_does_not_echo_private_argument(self):
+        output, errors = io.StringIO(), io.StringIO()
+        with redirect_stdout(output), redirect_stderr(errors):
+            code = main(["private-invalid-command"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["error"]["code"], "INVALID_ARGUMENTS")
+        self.assertNotIn("private-invalid-command", output.getvalue() + errors.getvalue())
+
     @staticmethod
     def snapshot_tree(
         root: Path,

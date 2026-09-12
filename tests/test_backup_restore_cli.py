@@ -607,9 +607,10 @@ class BackupRestoreCliTests(unittest.TestCase):
             )
 
     def test_reconcile_rename_crashes_are_idempotently_recovered(self) -> None:
-        stages = (
-            "reconcile.after_new_reverted:history",
-            "reconcile.after_old_restored:history",
+        stages = tuple(
+            f"reconcile.{operation}:{category}"
+            for operation in ("after_new_reverted", "after_old_restored")
+            for category in ("dictionary", "history", "settings", "voice_profiles")
         )
         for reconcile_stage in stages:
             with self.subTest(stage=reconcile_stage), tempfile.TemporaryDirectory() as name:
@@ -628,7 +629,7 @@ class BackupRestoreCliTests(unittest.TestCase):
                     archive,
                     live,
                     safety,
-                    "restore.after_incoming_promoted:history",
+                    "restore.after_incoming_promoted:voice_profiles",
                 )
                 self.assertEqual(
                     interrupted.returncode,
@@ -667,6 +668,58 @@ class BackupRestoreCliTests(unittest.TestCase):
                 self.assertEqual(
                     payload["result"]["terminal_state"], "NO_PENDING_RESTORE"
                 )
+
+    def test_restore_death_between_rename_and_journal_preserves_original_tree(self) -> None:
+        # Kill a real child immediately after the filesystem rename, before
+        # the normal after-stage hook or journal update can run.
+        script = (
+            "import os,sys\n"
+            "from pathlib import Path\n"
+            "from neutral_tts.backup_restore import restore_backup\n"
+            "live=Path(sys.argv[2]); category=sys.argv[4]; direction=sys.argv[5]\n"
+            "rename=os.rename\n"
+            "def interrupted_rename(source, target, *args, **kwargs):\n"
+            "    result=rename(source,target,*args,**kwargs)\n"
+            "    selected=Path(source if direction == 'out' else target)\n"
+            "    if selected == live/category:\n"
+            "        os._exit(75)\n"
+            "    return result\n"
+            "os.rename=interrupted_rename\n"
+            "restore_backup(Path(sys.argv[1]),live,safety_backup_path=Path(sys.argv[3]))\n"
+        )
+        for category in ("dictionary", "history", "settings", "voice_profiles"):
+            for direction, populated in (("out", True), ("in", True), ("in", False)):
+                with self.subTest(category=category, direction=direction, populated=populated):
+                    with tempfile.TemporaryDirectory() as name:
+                        root = Path(name)
+                        source, live = root / "source", root / "live"
+                        source.mkdir()
+                        live.mkdir()
+                        self._source(source, marker="incoming")
+                        if populated:
+                            self._source(live, marker="original")
+                        (live / "unmanaged.txt").write_text("preserve", encoding="utf-8")
+                        before = self._whole_snapshot(live)
+                        directories = sorted(p.name for p in live.iterdir() if p.is_dir())
+                        archive, safety = root / "incoming.zip", root / "safety.zip"
+                        create_backup(source, archive)
+                        child = subprocess.run(
+                            [sys.executable, "-c", script, str(archive), str(live),
+                             str(safety), category, direction],
+                            env=self._subprocess_environment(), capture_output=True,
+                            text=True, check=False, timeout=20,
+                        )
+                        self.assertEqual(child.returncode, 75, child.stderr)
+                        code, payload, _ = self._invoke(["recover", "--data-root", str(live)])
+                        self.assertEqual(code, 0)
+                        self.assertEqual(payload["result"]["terminal_state"], "ROLLED_BACK")
+                        self.assertEqual(self._whole_snapshot(live), before)
+                        self.assertEqual(
+                            sorted(p.name for p in live.iterdir() if p.is_dir()), directories
+                        )
+                        code, payload, _ = self._invoke(["recover", "--data-root", str(live)])
+                        self.assertEqual(code, 0)
+                        self.assertEqual(payload["result"]["terminal_state"], "NO_PENDING_RESTORE")
 
     def test_backup_publication_swap_is_rejected_without_deleting_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as name:

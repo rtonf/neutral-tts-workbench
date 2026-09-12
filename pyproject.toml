@@ -3,6 +3,7 @@ name = "neutral-tts-workbench"
 version = "0.1.0.dev0"
 description = "Source-only neutral TTS planning, estimation, and safe output naming core"
 requires-python = ">=3.11"
+license = {file = "LICENSE"}
 dependencies = []
 
 [project.scripts]
