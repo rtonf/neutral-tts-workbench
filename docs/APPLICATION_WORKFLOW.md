@@ -101,6 +101,34 @@ cannot access roots added only to the later store value. The next public
 operation reads the later value and rejects it. The standalone backup/restore
 and install APIs remain available under their dedicated ownership contracts.
 
+The separate `neutral-tts-backup` host exposes explicit `backup`, `restore`,
+and `recover` commands without being called by generation or startup. The
+operator selects a dedicated data root; the existing backup contract considers
+only `settings`, `history`, `dictionary`, and `voice_profiles`, accepts only its
+bounded JSON data types, and ignores unrelated root files. It never selects an
+entire user directory, audio, model/runtime payloads, or executables. Backup
+publication and the caller-selected pre-restore safety archive are fresh-file,
+no-overwrite operations. Restore validates the archive and available workspace
+capacity before delegating mutation, then reuses the existing safety snapshot,
+directory guards, rollback journal, final integrity verification, and explicit
+recovery operation. Its JSON result reports only bounded counts, digests, and a
+terminal state; local paths and exception text are discarded.
+
+For a synthetic or separately approved data root, invoke the host explicitly:
+
+```powershell
+$env:PYTHONPATH = ".\src"
+python -m neutral_tts.backup_restore_cli backup `
+  --data-root .staging/synthetic-data `
+  --archive .staging/synthetic-data.zip
+python -m neutral_tts.backup_restore_cli restore `
+  --archive .staging/synthetic-data.zip `
+  --data-root .staging/empty-restore-target `
+  --safety-backup .staging/pre-restore-safety.zip
+python -m neutral_tts.backup_restore_cli recover `
+  --data-root .staging/empty-restore-target
+```
+
 ## Optional compatible backend
 
 `IrodoriTokenizerCounter` lazily loads only a host-selected local tokenizer and

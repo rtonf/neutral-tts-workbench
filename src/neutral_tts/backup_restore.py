@@ -692,6 +692,7 @@ def restore_backup(
     live_root: Path,
     *,
     safety_backup_path: Path | None = None,
+    expected_manifest: BackupManifest | None = None,
     fault_hook: Callable[[str], None] | None = None,
 ) -> Path:
     """Validate then restore all categories; return the automatic safety archive."""
@@ -700,6 +701,8 @@ def restore_backup(
     # even inspected.  This is the startup recovery boundary for live data.
     reconcile_restore(root)
     manifest, contents = _read_archive(archive_path)
+    if expected_manifest is not None and manifest != expected_manifest:
+        raise ArchiveRejected("backup archive differs from its admitted manifest")
     if safety_backup_path is None:
         safety_backup_path = root.parent / f".neutral-pre-restore-{uuid.uuid4().hex}.zip"
     if not isinstance(safety_backup_path, Path) or not safety_backup_path.is_absolute():
@@ -858,12 +861,14 @@ class BackupRestore:
         archive_path: Path,
         *,
         safety_backup_path: Path | None = None,
+        expected_manifest: BackupManifest | None = None,
         fault_hook: Callable[[str], None] | None = None,
     ) -> Path:
         return restore_backup(
             archive_path,
             self.live_root,
             safety_backup_path=safety_backup_path,
+            expected_manifest=expected_manifest,
             fault_hook=fault_hook,
         )
 
