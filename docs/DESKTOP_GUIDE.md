@@ -63,10 +63,15 @@ approval. The package/file inventory still needs full engine-closure acceptance.
 
 Console equivalents after desktop setup:
 
+Run these from the application/source folder. Replace `<environment-folder>`
+with the dedicated Python environment selected during setup. The CLI uses the
+interpreter you invoke; it does not follow the desktop's interpreter selection.
+Use the same reviewed inference environment for real generation once available.
+
 ```powershell
 $env:PYTHONPATH = 'src'
-python -m neutral_tts.cli preview --data-root <data-folder> --text-file <input.txt>
-python -m neutral_tts.cli generate --data-root <data-folder> --text-file <input.txt>
+& '<environment-folder>\Scripts\python.exe' -m neutral_tts.cli preview --data-root <data-folder> --text-file <input.txt>
+& '<environment-folder>\Scripts\python.exe' -m neutral_tts.cli generate --data-root <data-folder> --text-file <input.txt>
 ```
 
 `demo-preview` is the explicit name of the former synthetic console preview.

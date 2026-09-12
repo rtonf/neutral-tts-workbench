@@ -51,6 +51,9 @@ separate from this standard-library workflow.
 
 For the ordinary real-tokenizer preview, complete the desktop setup and use
 `python -m neutral_tts.cli preview --data-root <data-folder> --text-file input.txt`.
+Here `python` must be the executable in the dedicated environment created during
+setup. The console does not automatically switch to the desktop's worker Python.
+See the explicit PowerShell commands in [the desktop guide](docs/DESKTOP_GUIDE.md).
 The corresponding `generate` command reuses the saved preview and rejects changed
 conditions. Real generation still requires reviewed engine/assets and a consented
 recording. See [tokenizer setup](docs/TOKENIZER_SETUP.md) for the separately pinned
