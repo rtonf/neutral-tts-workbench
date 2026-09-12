@@ -17,6 +17,8 @@
 - Corrected product rollback to require the retained application folder. Setup
   displays that folder and provides journal recovery after an interrupted update.
   Synthetic history is visibly labeled as silence and shows the selected WAV path.
+- Fixed synchronous memory playback on Python 3.11-3.13, whose Windows audio
+  module does not expose the newer explicit synchronous flag.
 
 Known limitations: real inference and saved-WAV watermark detection remain
 unaccepted; inference setup still needs a reviewed complete configuration;

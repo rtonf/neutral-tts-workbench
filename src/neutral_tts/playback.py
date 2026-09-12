@@ -87,7 +87,9 @@ class WinsoundPlayback:
             raise PlaybackError("Windows playback is unavailable on this host")
         import winsound
 
-        winsound.PlaySound(data, winsound.SND_MEMORY | winsound.SND_SYNC)
+        # Synchronous playback is the default. SND_SYNC is not exported by the
+        # supported Python 3.11-3.13 winsound modules.
+        winsound.PlaySound(data, winsound.SND_MEMORY)
 
     def play(
         self,

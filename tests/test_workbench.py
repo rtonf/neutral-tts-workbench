@@ -194,6 +194,26 @@ Workbench(Path(sys.argv[1])).generate('synthetic',demo=True)
             with self.assertRaises(ValueError):
                 workbench.preview("x" * 4096, demo=True)
 
+    def test_product_playback_with_python313_winsound_exports(self):
+        from types import SimpleNamespace
+        from neutral_tts.playback import WinsoundPlayback
+        captured = []
+        # Python 3.13 exports SND_MEMORY and SND_ASYNC, but no SND_SYNC.
+        api = SimpleNamespace(SND_MEMORY=4, SND_ASYNC=1,
+            PlaySound=lambda data, flags: captured.append((data, flags)))
+        with tempfile.TemporaryDirectory() as name:
+            host, _ = self.configure(Path(name))
+            host.preview("synthetic", demo=True)
+            generated = host.generate("synthetic", demo=True)
+            run_id = host.startup()["history"][0]["run_id"]
+            class CapturedPlayback(WinsoundPlayback):
+                @staticmethod
+                def _windows_player(data):
+                    with patch("neutral_tts.playback.os", SimpleNamespace(name="nt")), patch.dict(sys.modules, {"winsound": api}):
+                        WinsoundPlayback._windows_player(data)
+            self.assertEqual(host.play(run_id, CapturedPlayback()), {"played": True})
+            self.assertEqual(captured, [(Path(generated["destination"]).read_bytes(), api.SND_MEMORY)])
+
     def make_layouts(self, root):
         from neutral_tts.install_contract import create_test_layout
         layouts = []
