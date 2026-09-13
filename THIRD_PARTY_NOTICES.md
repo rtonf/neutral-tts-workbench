@@ -1,5 +1,9 @@
 # Third-party conditions and notices
 
+利用者向けの[権利・同意・責任の説明](docs/VOICE_USE.md)は、下記の各ライセンスと区別して読んでください。
+自作MITの使用・改変・再配布の許諾へ追加制限を混ぜるものではなく、第三者の録音や声の許諾も付与しません。
+上流の学習データ全件の許諾を、この表示やハッシュによって認証したものではありません。
+
 The application's own source is MIT, copyright 2026 rtonf. The Windows
 source-layout distribution contains its installer, launcher and application
 source. Inference packages and model assets are acquired separately by setup.

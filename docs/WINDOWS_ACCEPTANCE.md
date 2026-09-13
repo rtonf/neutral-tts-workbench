@@ -41,6 +41,13 @@ these private samples, not a guarantee for all texts or voices. Private
 recordings, generated samples, voice labels, screenshots with user paths and
 private evidence records are not shipped.
 
+The actual tested reference selection consists of two mono PCM16/44.1 kHz
+recordings: 152900 and 151891 frames (3.467120 and 3.444240 seconds; total
+6.911361 seconds). Their configured hashes were matched to the saved private
+copies. This was not a single 30-second reference trial. Human acceptance
+concerned intelligibility and obvious anomalies; speaker similarity and unaided
+first-time user completion were not evaluated. See [user guidance](VOICE_USE.md).
+
 The full suite at `426732afa747ace3b475335ad68da4d9897eacd1` ran 266 cases:
 257 passed, 9 skipped because the ordinary process could not create symlinks,
 with no failures or errors. On 2026-09-13, the exact nine skipped test methods

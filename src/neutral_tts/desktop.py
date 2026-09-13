@@ -111,6 +111,11 @@ class Desktop:
         maintenance = ttk.Frame(self.tabs, padding=10)
         for frame, title in ((generate, "音声を作る"), (setup, "初回設定・辞書"), (history, "履歴・再生"), (maintenance, "保全・更新")):
             self.tabs.add(frame, text=title)
+        from .user_guidance import show_guidance
+        guidance = ttk.Frame(generate)
+        guidance.pack(fill="x", pady=(0, 6))
+        ttk.Label(guidance, text="録音の権利・声の複製同意・用途を確認し、公開時は合成音声と分かる表示に。", wraplength=500).pack(side="left", fill="x", expand=True)
+        ttk.Button(guidance, text="権利・責任・相談先", command=lambda: show_guidance(window)).pack(side="right", padx=(8, 0))
         ttk.Label(generate, text="読み上げる文章（4096文字まで）").pack(anchor="w")
         self.text = tk.Text(generate, height=12, wrap="word", undo=True)
         self.text.pack(fill="both", expand=True, pady=8)

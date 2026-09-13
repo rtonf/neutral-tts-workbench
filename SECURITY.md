@@ -1,5 +1,9 @@
 # Reporting security problems
 
+声の無断利用・誤認・ライセンス情報などの相談は、[権利侵害・悪用の相談手順](docs/ABUSE_REPORTING.md)を参照してください。
+公開Issueに音声、同意書、身分証、連絡先、私有パスを掲載せず、まず個人情報を含めずに連絡方法を相談してください。
+非公開脆弱性報告を一般の権利相談用の常設窓口とは扱っていません。
+
 When the public repository becomes available, use GitHub's private vulnerability
 reporting for `rtonf/neutral-tts-workbench` if that feature is enabled. Do not put
 credentials, private voices, raw input text, recordings or local absolute paths

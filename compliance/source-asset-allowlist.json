@@ -28,6 +28,8 @@
   ],
   "asset_paths": [],
   "disclosure_paths": [
+    "docs/VOICE_USE.md",
+    "docs/JAPAN_AI_COMPLIANCE.md",
     "README.md",
     "src/neutral_tts/local_runtime.py",
     "src/neutral_tts/inference_dialog.py",
@@ -52,6 +54,10 @@
     "docs/WINDOWS_ACCEPTANCE.md"
   ],
   "required_disclosure_paths": [
+    "docs/VOICE_USE.md",
+    "docs/JAPAN_AI_COMPLIANCE.md",
+    "docs/ABUSE_REPORTING.md",
+    "docs/PRIVACY.md",
     "THIRD_PARTY_NOTICES.md",
     "docs/RELEASE_NO_GO.md",
     "compliance/license-matrix.public.json",

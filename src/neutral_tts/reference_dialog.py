@@ -9,12 +9,15 @@ class ReferenceDialog:
         self.desktop = desktop
         self.window = tk.Toplevel(desktop.window)
         self.window.title("参照音声と利用範囲")
-        self.window.geometry("830x660")
+        self.window.geometry("830x720")
+        self.window.minsize(780, 700)
         self.window.transient(desktop.window)
         self.window.grab_set()
         outer = ttk.Frame(self.window, padding=15)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="参照WAVを1～4本選択（mono PCM16 / 44.1・48 kHz / 各30秒以内）").pack(anchor="w")
+        from .user_guidance import show_guidance
+        ttk.Button(outer, text="先に確認：録音・声・用途の権利と利用者の責任", command=lambda: show_guidance(self.window)).pack(anchor="w", pady=(5, 0))
         self.paths = tk.Listbox(outer, height=4, exportselection=False)
         self.paths.pack(fill="x", pady=7)
         row = ttk.Frame(outer)
@@ -35,9 +38,9 @@ class ReferenceDialog:
         ttk.Label(outer, textvariable=self.evidence, wraplength=780).pack(anchor="w")
         self.statements, self.confirmations = {}, {}
         labels = {
-            "recording_use": "録音の使用：誰から、どの試験・用途に使用する許可を得たか",
+            "recording_use": "録音の使用：録音物・実演・台本等の権利と、誰からどの用途の許可を得たか",
             "voice_replication": "声の再生成：話者から得た明示同意と、その範囲",
-            "generated_audio_use": "生成音声：非公開試験・公開・商用など、許される用途と制限",
+            "generated_audio_use": "生成音声：非公開・ネット公開・広告・販売・第三者提供など、許される用途と制限",
         }
         for scope, label in labels.items():
             ttk.Label(outer, text=label).pack(anchor="w", pady=(10, 2))
@@ -46,7 +49,7 @@ class ReferenceDialog:
             confirmed = tk.BooleanVar(value=False)
             ttk.Checkbutton(outer, text="この項目の許可範囲を確認した", variable=confirmed).pack(anchor="w")
             self.statements[scope], self.confirmations[scope] = field, confirmed
-        ttk.Label(outer, text="原本を変更せず、アプリの非公開データ内に参照コピーと申告を保存します。\n申告の保存は、第三者資産のライセンス審査や音声の公開許可を代行しません。\n参照コピー・根拠資料は通常バックアップの対象外です。必要なら別途保管してください。",
+        ttk.Label(outer, text="ネットで入手できることは許可を意味しません。他の合成サービスの音声も条件を確認してください。\n3項目は利用者の申告で、権利者の本人確認や許諾の真偽を認証する機能ではありません。\n原本を変更せず、参照コピーと申告を非公開保存します。根拠資料と参照は通常バックアップ対象外です。",
                   wraplength=780).pack(anchor="w", pady=10)
         ttk.Button(outer, text="参照を検査して非公開登録", command=self.submit).pack(anchor="e")
 

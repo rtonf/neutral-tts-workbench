@@ -1,5 +1,23 @@
 # Local Windows desktop candidate
 
+## 生成前に確認すること
+
+[権利・同意・利用者の責任](VOICE_USE.md)を確認してから参照音声を登録してください。
+録音物・実演・文章等の利用権、話者本人の声の複製への明示同意、生成音声の用途は別々です。
+話者の許可だけで他の権利まで処理できるとは限りません。公開サイトや他の音声合成サービスの素材も条件を確認します。
+私的試験の許可をネット公開・広告・販売・第三者提供に広げず、公開時は合成音声と分かる表示・文脈にしてください。
+登録は利用者の申告で、本人や許諾の認証ではありません。MITと法令・モデル条件は区別します。
+
+生成画面の「権利・責任・相談先」、参照登録と初回セットアップの案内ボタンで、同梱文書を読めます。
+別ウィンドウの選択欄から責任・個人情報・相談・日本法・部品条件を切り替え、スクロールして確認できます。
+「閉じる」で元の入力へ戻れます。文書表示はネットへ接続せず、入力や音声も送信しません。
+相談方法は[ABUSE_REPORTING](ABUSE_REPORTING.md)、保存と相談資料の扱いは[PRIVACY](PRIVACY.md)を参照してください。
+
+参照を条件とする既存モデルの推論であり、声ごとの追加学習は不要です。
+参照は1～4本、mono PCM16、44.1/48 kHz、各30秒・6 MiB以内。30秒は受付上限であり品質保証ではありません。
+試したのは約3.47秒・3.44秒の2本で、30秒1本・話者類似度・初見の初心者による操作は未評価です。
+必要なPython/Tk、対応確認済みPC、初回取得と容量、文章入力は[README](../README.md)の手順に従ってください。
+
 This candidate adds a Tk desktop and a working source installer. It is unsigned
 and requires a separately installed Python with Tk. It does not bundle Python,
 native libraries, inference engines, models or reference recordings. The agreed

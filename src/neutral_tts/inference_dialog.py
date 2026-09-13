@@ -17,6 +17,8 @@ class InferenceDialog:
         frame = ttk.Frame(dialog, padding=14)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="参照音声と許可範囲を登録した後、公開版専用の環境を作成します。", wraplength=760).pack(anchor="w")
+        from .user_guidance import show_guidance
+        ttk.Button(frame, text="利用前の確認：権利・責任・個人情報・相談先", command=lambda: show_guidance(dialog)).pack(anchor="w", pady=(6, 0))
         ttk.Label(frame, text=f"モデル等：約{sum(r['size'] for r in fixed['assets']['assets']) / 1e9:.2f} GB ＋ CUDAを含む固定Python依存。\n空き16 GiBが必要です。既存のアプリ環境は選択せず、空の専用フォルダーを指定してください。\n中断時は同じフォルダーで再実行でき、取得済みファイルはハッシュを再検査します。", wraplength=760).pack(anchor="w", pady=8)
         terms_frame = ttk.Frame(frame)
         terms_frame.pack(fill="both", expand=True)
@@ -27,7 +29,11 @@ class InferenceDialog:
         terms.pack(fill="both", expand=True)
         terms.insert("1.0", "参照音声と利用範囲\n"
             "録音の利用権、声の再生成への明示同意、生成音声を使える範囲を別々に確保してください。"
-            "今回の登録内容を超えて公開・再配布・商用利用する許可は、このアプリから付与されません。\n\n"
+            "今回の登録内容を超えて公開・再配布・商用利用する許可は、このアプリから付与されません。"
+            "申告は本人確認や許諾の認証ではありません。公開時は合成音声と分かる表示と文脈にしてください。\n\n"
+            "利用者の責任\n権利と用途の確認は利用者が行います。利用者の無許諾・違法利用による紛争等を、"
+            "開発者が代わって引き受けるものではありません。免責は適用法令の範囲内で、開発者自身の故意・重過失等の"
+            "排除できない責任を免除しません。自作ソースのMIT許諾と第三者の条件は別です。\n\n"
             "TTSとトークナイザー\nIrodori-TTS-v4-Small（固定版 4c92c7ee2bb1）。MIT表記に加え、"
             "明示同意のない声の複製と、意図的に誤認させる合成音声は禁止されています。\n"
             "https://huggingface.co/Aratako/Irodori-TTS-v4-Small\n\n"

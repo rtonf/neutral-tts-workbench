@@ -1,5 +1,15 @@
 # 0.1.0rc1 — unsigned Windows release candidate
 
+生成前に[権利・同意・利用者の責任](VOICE_USE.md)を確認してください。
+録音・実演・文章等の権利、話者の声の複製への明示同意、公開・商用・第三者提供等の用途を区別します。
+利用者の無許諾・違法利用による紛争等を開発者が代わって引き受けるものではありません。免責は法令の範囲内で、
+開発者自身の故意・重過失等の排除できない責任を免除しません。MIT本文とその許諾は維持しています。
+[プライバシー](PRIVACY.md)、[権利侵害・悪用の相談](ABUSE_REPORTING.md)、[日本法・AI指針への対応と限界](JAPAN_AI_COMPLIANCE.md)を追加しました。
+生成・参照登録・初回セットアップから同梱文書を表示できます。同意欄は本人や許諾の認証ではありません。
+
+短い参照WAVを条件とする既存モデルの推論で、声ごとの追加学習は不要です。試験参照は約3.47秒と3.44秒の2本。
+30秒1本、話者類似度、初見の初心者による導入は未評価です。公開時は合成音声と分かる表示・文脈にしてください。
+
 - Added a Tk desktop for input, persisted settings/dictionary, preview,
   generation, selected destination, verified history/playback and recovery.
 - Replaced ordinary CLI demo preview with configured real-tokenizer preview.

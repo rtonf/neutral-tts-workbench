@@ -29,3 +29,10 @@ unsigned distribution specification, not a passed check.
 The generation adapter requires mono PCM16 at 48 kHz; reference WAV
 admission accepts mono PCM16 at 44.1/48 kHz, up to 30 seconds. These are software
 admission limits, not measured quality recommendations.
+
+Generation conditions the existing model on reference audio; it does not train
+or fine-tune a per-speaker model. The tested reference configuration contains
+two recordings of approximately 3.47 and 3.44 seconds, total 6.91 seconds.
+A single 30-second reference, speaker similarity and unaided first-time user
+completion were not evaluated. [Japanese user guidance](VOICE_USE.md) separates
+those claims and explains recording rights, voice consent and intended use.

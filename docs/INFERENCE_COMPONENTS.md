@@ -1,5 +1,8 @@
 # Fixed inference components and permitted uses
 
+日本語の[録音・声・生成物の利用条件](VOICE_USE.md)と[日本法・AI指針への対応](JAPAN_AI_COMPLIANCE.md)を併せて確認してください。
+この部品確認は、上流モデルの全学習データの権利処理や個々の生成物の非侵害を保証しません。
+
 This integration downloads third-party components into a separate, local setup
 folder. Its source distribution contains no model weights or reference audio.
 The exact source revisions and SHA-256 values are in
