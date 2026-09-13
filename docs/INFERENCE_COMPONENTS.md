@@ -59,6 +59,17 @@ wheel catalog is the installation identity; it is not a claim that every
 native library may be repackaged under MIT. Redistribution of an assembled
 runtime is outside this source-layout distribution.
 
+The tested CUDA wheel includes cuDNN native file version 9.10.2.21. Review the
+[CUDA 12.8.1 license](https://docs.nvidia.com/cuda/archive/12.8.1/eula/index.html),
+[cuDNN 9.10.2 license](https://docs.nvidia.com/deeplearning/cudnn/backend/v9.10.2/reference/eula.html)
+and [cuDNN acknowledgements](https://docs.nvidia.com/deeplearning/cudnn/backend/v9.10.2/reference/acknowledgements.html).
+NVIDIA grants installation and use under its own conditions, with separate
+limits for redistribution, modification and reverse engineering. A frontend
+MIT notice does not license the native cuDNN backend. This application does not
+repackage these binaries; the fixed PyTorch distribution supplies them with its
+retained notices. Their exact installed bytes are covered by the runtime
+fingerprint and the native artifact inventory.
+
 Four wheel distributions require separately retained license texts: ffmpy,
 tokenizers, tqdm and tensorboard-data-server. Their notice URLs and hashes
 are fixed in the additional notice catalog. The installed data-server 0.7.2

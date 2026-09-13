@@ -148,7 +148,11 @@ guess which files can be removed. An unverified or externally changed state need
 attention and is retained. Keep all retained folders until recovery completes.
 
 This is a Python/Tk source installer, not an EXE/MSI or a self-contained runtime.
-New Windows installation, 9 capability-dependent reparse tests, physical offline
-testing, code signing, final speech/watermark tests and public acquisition tests
-remain release gates. A checksum detects changed bytes; it is not a publisher
-signature. Do not disable host security to run a candidate.
+Current-host installation, real generation, update/rollback/interruption,
+restart/playback and uninstall with retained user data have been exercised.
+The 9 capability-dependent reparse cases and broader human listening remain
+separate acceptance items. New Windows and physical-offline use are unverified;
+code signing is outside the agreed release scope. Final public acquisition
+requires publication approval. See [measured acceptance](WINDOWS_ACCEPTANCE.md)
+and [reproducible builds](WINDOWS_BUILD.md). A checksum detects changed bytes;
+it is not a publisher signature. Preserve Windows security protections.

@@ -152,6 +152,23 @@ class SupplyChainTests(unittest.TestCase):
         self.assertEqual({item["name"] for item in cyclonedx["components"]}, {item["path"] for item in facts})
         self.assertEqual(tree, subprocess_tree(self.fixture, self.commit))
 
+    def test_selected_payload_sbom_cannot_include_absent_or_duplicate_paths(self) -> None:
+        lock = load_lock(self.lock)
+        _, facts = git_tree_files(self.fixture, self.commit)
+        chosen = [entry["path"] for entry in facts[:2]]
+        full = build_spdx_document(self.fixture, self.commit, lock)
+        selected = build_spdx_document(self.fixture, self.commit, lock, file_paths=chosen)
+        cdx = build_cyclonedx_document(self.fixture, self.commit, lock, file_paths=chosen)
+        self.assertEqual({entry["fileName"] for entry in selected["files"]}, {"./" + p for p in chosen})
+        self.assertEqual({entry["name"] for entry in cdx["components"]}, set(chosen))
+        self.assertNotEqual(full["documentNamespace"], selected["documentNamespace"])
+        expected = hashlib.sha1("".join(sorted(entry["sha1"] for entry in facts[:2])).encode("ascii")).hexdigest()
+        self.assertEqual(selected["packages"][0]["packageVerificationCode"]["packageVerificationCodeValue"], expected)
+        for paths in ([], [chosen[0], chosen[0]], ["not-in-this-tree.py"]):
+            for builder in (build_spdx_document, build_cyclonedx_document):
+                with self.assertRaises(SourceMetadataError):
+                    builder(self.fixture, self.commit, lock, file_paths=paths)
+
     def test_repeated_builds_are_byte_identical_and_no_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             first = Path(directory) / "one.zip"

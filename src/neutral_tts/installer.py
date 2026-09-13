@@ -18,7 +18,7 @@ def main():
     frame = ttk.Frame(window, padding=20)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text=DISPLAY_NAME + " Setup", font=("Segoe UI", 17, "bold")).pack(anchor="w")
-    ttk.Label(frame, text="未署名のローカル候補。現在の検証条件はPython 3.13とTkです。\n新規Windows・実TTSの受け入れ試験は未完了です。", wraplength=780).pack(anchor="w", pady=12)
+    ttk.Label(frame, text="未署名のPython/Tk配布版です。Windows x64・Python 3.13とTkが必要です。\nアプリ、利用者データ、WAVを別の場所に保存します。モデルと専用環境は起動後に設定します。", wraplength=780).pack(anchor="w", pady=12)
     local = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
     values = {"layout_root": tk.StringVar(value=str(Path(__file__).absolute().parents[2])),
               "app_root": tk.StringVar(value=str(local / "Programs" / "neutral-tts-workbench")),

@@ -1,8 +1,10 @@
 # Unsigned source-candidate foundation
 
-The release foundation defines deterministic records for future review. It
-does not create a launcher, installer, signature, certificate, or public
-release.
+This document describes the earlier internal source-contract record types.
+The current desktop and unsigned installer are implemented separately. Their
+actual validation is in [Windows acceptance](WINDOWS_ACCEPTANCE.md), and their
+source-layout packaging is in [Windows build](WINDOWS_BUILD.md). These internal
+contracts do not by themselves authorize publication or attest to a device.
 
 `release_contract.py` binds a candidate identifier to one exact Git commit and
 tree plus SHA-256 values for the dependency lock, install-layout manifest,
@@ -28,3 +30,8 @@ canonical `PENDING` template. Digest-shaped `PASSED` or `FAILED` edits are
 rejected because there is no trusted physical-device verifier or authority key
 in this source tree. A future externally attested result requires a separately
 approved verifier and schema.
+
+The clean-Windows template remains a pending internal contract. Current-host
+acceptance replaces the originally proposed fresh-Windows requirement by the
+user's decision; it is recorded as current-host evidence without relabeling that
+template or changing a synthetic result to a physical-device attestation.

@@ -56,5 +56,7 @@ written. A reparse or identity race is an error, never a successful lifecycle
 result.
 
 The current contract relies on same-volume Windows rename and hard-link
-semantics. Cross-volume promotion fails closed. It is synthetic evidence only,
-not a public distribution artifact or clean-device acceptance result.
+semantics. Cross-volume promotion fails closed. The contract tests and the
+actual current-host installer acceptance are separate evidence. See
+[Windows acceptance](WINDOWS_ACCEPTANCE.md) for installation, interrupted
+update, rollback, real-data retention and uninstall observations.

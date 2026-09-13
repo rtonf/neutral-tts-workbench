@@ -47,7 +47,12 @@ native libraries and soxr include LGPL conditions; LLVM-derived libraries
 include Apache-2.0 with the LLVM exception. CUDA and related NVIDIA libraries
 retain NVIDIA's applicable terms. A Python package's top-level license does
 not replace these native licenses. [CUDA 12.8 terms](https://docs.nvidia.com/cuda/archive/12.8.1/eula/index.html)
-and the installed license inventory provide corresponding references.
+and [cuDNN 9.10.2 terms](https://docs.nvidia.com/deeplearning/cudnn/backend/v9.10.2/reference/eula.html),
+its [third-party acknowledgements](https://docs.nvidia.com/deeplearning/cudnn/backend/v9.10.2/reference/acknowledgements.html),
+and the installed license inventory provide corresponding references. The tested
+native cuDNN file version is 9.10.2.21. These backend terms remain distinct from
+any MIT-licensed cuDNN frontend code. GPU binaries are obtained separately;
+the Windows application ZIP does not redistribute them.
 The playback path uses Python's Windows audio support and the operating system.
 Python/Tcl/Tk and GPU drivers are separately installed prerequisites.
 

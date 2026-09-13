@@ -1,109 +1,97 @@
-# Neutral TTS Workbench (development name)
+# Neutral TTS Workbench
 
-This desktop generates speech locally, previews the exact text plan, and keeps
-WAV files in a folder selected by the user. The Windows candidate uses a
-Python/Tk installer and guided setup for a separate inference environment.
-Start with [the desktop guide](docs/DESKTOP_GUIDE.md) and
-[the current feature scope](docs/PRODUCT_SCOPE.md). The source provides:
+Windowsで日本語の音声をローカル生成するデスクトップアプリです。入力・辞書・
+生成前プレビュー・WAV保存・再生・履歴・バックアップ・復元を一つの画面で扱えます。
+実生成と同じトークナイザーで分割・トークン数・保存名を確認し、条件が変わった場合は
+再プレビューを求めます。重い処理は別プロセスで実行し、中断後は保存済み音声を検査します。
 
-1. safe, previewable WAV filename templates with Windows-safe normalization
-   and no-replace collision sequencing;
-2. a pre-generation estimate that reuses one deterministic text plan and shows
-   counts plus coarse duration, storage, staging, and device/quality timing
-   ranges without invoking a sampler;
-3. a framework-neutral application service and CLI that connect settings,
-   pure preview, startup reconciliation, durable generation admission, safe
-   publication, and receipt feedback;
-4. a fail-closed dependency lock plus deterministic SPDX/CycloneDX source-archive tools
-   for local internal source review;
-5. cancellation/crash reconciliation and versioned, integrity-checked data
-   backup with automatic pre-restore safety backup and rollback;
-6. a Python/Tk launcher and local source installer using owned-file install,
-   update, rollback and uninstall transactions;
-7. an optional, explicitly configured Irodori-TTS compatible backend and
-   identity-checked tokenizer-only counter that keep model/runtime/reference
-   assets outside the source package; and
-8. a responsive desktop connecting setup, input, real-tokenizer preview,
-   generation, hash-verified history, playback, backup and recovery.
+**0.1.0rc1の公開候補を準備中です。現在は公開承認前です。**
+通常文・長文の実生成と、このWindowsホストでの導入・更新・復旧・削除を確認しました。
+通常文・長文の本人による試聴評価と、権限依存の9件の試験は未完です。
+[6項目の残工程](docs/RELEASE_NO_GO.md)と[実測した条件](docs/WINDOWS_ACCEPTANCE.md)を確認してください。
 
-The working display name is defined once in `src/neutral_tts/identity.py`. The
-Python module name is deliberately neutral. This repository is not an official
-or partnered product and contains no synthesis engine, voice/reference asset,
-model/runtime payload, or public binary payload. The compatible backend is a
-source adapter. The supplied local host verifies an explicit asset inventory
-and private rights-record bindings before using an installed inference package.
-See [local runtime configuration](docs/LOCAL_RUNTIME.md).
+## 導入と最初の生成
 
-## Current status
+配布形式は**未署名のPython/Tkソース配置ZIP**です。Pythonやモデルを同梱しません。
+Python 3.13 x64とTcl/Tkを[Python公式配布](https://www.python.org/downloads/windows/)から
+用意してください。検証した版はPython 3.13.1・Tk 8.6です。
+コード署名は今回の配布仕様では対象外で、署名検証済みとは扱いません。
 
-The project source is licensed under [MIT](LICENSE), copyright 2026 rtonf.
-Third-party components keep their own conditions. Public release readiness is
-`NO-GO` pending final dependency notices, frozen-candidate acceptance and
-publication approval. Real short, ordinary and multi-chunk speech has been
-generated through the desktop on one Windows 11 host. Saved-WAV watermark
-detection, playback, history, restore and cancellation recovery were exercised.
-The short listening sample was accepted; broader listening and final installed
-candidate acceptance are tracked separately. See
-[release status](docs/RELEASE_NO_GO.md) for the current boundaries.
+1. 公開承認後、対象ReleaseのWindows ZIPとSHA256SUMS.txtを取得します。
+   [ハッシュ照合手順](docs/UNSIGNED_DISTRIBUTION.md)で確認してから展開します。
+2. 展開先で `python windows_setup.pyw` を実行します。アプリ配置先と利用者データを確認し、
+   「インストール」を押します。アプリ配置先の末尾は `neutral-tts-workbench` にします。
+3. 配置したアプリのフォルダーで `python launch_desktop.pyw` を実行します。
+   保存先WAVフォルダーは、アプリ・利用者データと別の場所を選びます。
+4. 「参照音声と利用範囲を登録」で、自分が使う許可を持つ参照WAVを登録します。
+   録音の利用権、声の再生成への明示同意、生成音声の利用範囲をそれぞれ記録します。
+5. 「実生成の初回セットアップ」で条件を読み、空の専用フォルダーを指定します。
+   16 GiB以上の空き容量が必要です。固定版の公式ファイルを取得・ハッシュ検査し、
+   専用Python環境と設定を作成します。失敗した場合は同じフォルダーで再実行できます。
+6. 保存先と辞書を確認して「設定・辞書を保存」を押します。文章を入力し、
+   「プレビュー」で分割・見積り・保存名を確認してから生成します。
+7. 「履歴」で実際の保存場所を確認し、再生または保存WAVの透かし検査を行います。
 
-The Windows release format is an **unsigned Python/Tk source-layout ZIP**.
-Code signing is outside this release specification; no signature validation is
-claimed. Python 3.13 with Tcl/Tk must be installed separately. See
-[download verification and Windows warnings](docs/UNSIGNED_DISTRIBUTION.md).
+詳しい画面操作、CLI、更新・ロールバック・中断からの復旧・アンインストールは
+[利用ガイド](docs/DESKTOP_GUIDE.md)にあります。アンインストールでは利用者データと
+WAVを保持します。バックアップには設定・辞書・履歴が入り、**WAV・参照音声・
+モデル・専用環境は入りません**。移行時はこれらも別途、非公開で保管してください。
 
-The tested inference condition is Windows 11 x64, Python 3.13, an NVIDIA
-RTX 2060 SUPER with 8 GiB VRAM, and CUDA/fp32. This is a tested configuration,
-not a minimum-GPU claim. Other GPUs, CPU inference, other Windows versions and
-a freshly installed Windows system remain unverified. Current-host installation
-and uninstallation are the acceptance scope of this release candidate.
+## 検証条件と制限
 
-In the desktop, register your own authorized reference recording, record the
-three permission scopes, and run the full inference setup. Choose a dedicated
-folder with at least 16 GiB free. Setup explains conditions, retrieves fixed
-official artifacts, verifies their hashes, installs a separate environment and
-saves the local settings. Then select the WAV folder, save settings, preview
-the input and generate. The [component conditions](docs/INFERENCE_COMPONENTS.md)
-apply separately from this project's MIT license.
+| 項目 | 今回の条件 |
+| --- | --- |
+| OS / Python | Windows 11 x64 / Python 3.13.1 / Tk 8.6 |
+| GPU | NVIDIA RTX 2060 SUPER 8 GiB、CUDA/fp32で実TTSを確認 |
+| 未検証 | 最小VRAM、別GPU、CPU推論、別Python・Windows版、新規Windows、物理オフライン |
+| 入力 | 4096文字、辞書展開後16384文字まで。分割は最大144文字・256トークン |
+| 保存音声 | 48 kHz・mono・PCM16 WAV |
+| 参照音声 | 1～4ファイル、44.1/48 kHz・mono・PCM16、各30秒・6 MiB以内 |
+| 履歴 | 一つの利用者データフォルダーで完成記録128件まで |
+| 容量 | 初回セットアップ前に16 GiB以上の空き。生成WAV・バックアップ等は追加 |
 
-For source development with Python 3.11 or later, run commands from the source
-checkout with `PYTHONPATH=src`. Run a synthetic preview with
-`python -m neutral_tts.cli demo-preview --text-file input.txt`. `demo-run` with the
-same input writes an explicitly labeled silence-only test WAV. The CLI accepts
-up to 4096 Unicode characters. `--text-file -` reads standard input and keeps
-the input text out of command arguments. Optional synthesis dependencies are
-separate from this standard-library workflow.
+このGPUは試した構成で、最低要件の保証ではありません。生成時間の表示は同じ資産・
+実行環境での成功履歴から得る参考範囲です。初回は未校正で、環境・ドライバーが変わると
+以前の校正値を無条件に引き継ぎません。資産の事前検証時間は生成時間の見積りに含みません。
 
-For the ordinary real-tokenizer preview, complete the desktop setup and use
-`python -m neutral_tts.cli preview --data-root <data-folder> --text-file input.txt`.
-Here `python` must be the executable in the dedicated environment created during
-setup. The console does not automatically switch to the desktop's worker Python.
-See the explicit PowerShell commands in [the desktop guide](docs/DESKTOP_GUIDE.md).
-The corresponding `generate` command reuses the saved preview and rejects changed
-conditions. Real generation still requires reviewed engine/assets and a consented
-recording. Full inference setup uses the tokenizer packaged with the fixed TTS
-model for both preview and generation. [Tokenizer-only setup](docs/TOKENIZER_SETUP.md)
-is an additional preview option. The inference asset, source and wheel locks
-are under `config/inference-*.lock.json`.
+## 利用条件・プライバシー
 
-The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the
-application flow and explicit silence-only demo are documented in
-`docs/APPLICATION_WORKFLOW.md`; and reproducible internal source packaging is
-documented in `docs/SOURCE_ONLY_PACKAGING.md`. Clean export and surface-scan
-commands remain in `docs/EXPORT_AND_SCAN.md`. Plain-language data protection is
-in `docs/DATA_PROTECTION.md`; lifecycle details are in
-`docs/INSTALL_UPDATE_CONTRACT.md`; and the unsigned release boundary is in
-`docs/RELEASE_FOUNDATION.md`.
+自作ソースは [MIT](LICENSE)、著作権表示は2026 rtonfです。TTS・tokenizer・codec・
+透かし・Python・native/CUDA依存にはそれぞれの条件があります。
+[採用部品の固定版・取得元・用途別条件](docs/INFERENCE_COMPONENTS.md)と
+[必要なライセンス・著作権表示](THIRD_PARTY_NOTICES.md)を保持してください。
+このプロジェクトは各上流プロジェクトの公式・提携製品ではありません。
 
-## Intended source workflow
+Irodori-TTS互換の実生成では、明示同意のない声の複製と意図的な誤認を生む合成音声を
+禁止するモデルの条件にも従います。透かしは明示的にAudioSealを使用します。
+その検出結果は本人性・同意・作成元を証明せず、誤検出や改変による未検出があります。
+録音・声・入力文・生成音声を使う権利は、透かしとは別に確認してください。
 
-1. Run the clean exporter with a private, hash-pinned allowlist into a new
-   staging directory.
-2. Scan staging before promotion.
-3. Develop and test only the neutral source surface.
-4. Scan the worktree, candidate commit tree, reachable history, and any future
-   archive independently.
-5. Compare the separately accepted protected tree against its immutable
-   before-manifest and stop on any mismatch.
+初回取得では公式の資産・パッケージ配布先に通信します。アプリには、参照音声や入力文を
+取得先へ送る処理、テレメトリー、常駐ネットワーク待受けはありません。本人向け画面は
+選択したフルパスを表示します。バックアップやスクリーンショットには私有パス等が
+含まれ得るので、公開の問い合わせへそのまま添付しないでください。
+[データ保全](docs/DATA_PROTECTION.md)と[脆弱性の報告方法](SECURITY.md)も確認してください。
 
-No generated text, audio, receipt history, profile, local path, model, runtime,
-or credential belongs in this repository.
+## ソースとビルド
+
+[Windows ZIPの再現手順](docs/WINDOWS_BUILD.md)、[機能仕様](docs/PRODUCT_SCOPE.md)、
+[変更履歴・Release notes](docs/RELEASE_NOTES.md)を用意しています。
+Windows ZIPには実際に選択したソースのSPDX/CycloneDX SBOMと所有ファイルmanifestが入り、
+別途取得する推論環境は `config/inference-inventory.json` と固定lockで識別します。
+ソース用の内部検証ZIPだけで製品完成とは扱いません。
+
+ソース開発の標準ライブラリー部分はPython 3.11以降が対象です。これは実推論の対応版宣言
+とは別です。ソースフォルダーで次を実行します。
+
+```powershell
+$env:PYTHONPATH = 'src'
+python -m unittest discover -s tests -q
+python -m neutral_tts.cli demo-preview --text-file input.txt
+```
+
+`demo-preview` / `demo-run` は明示的な合成試験で、生成する音声は無音です。
+通常の `preview` / `generate` は初回セットアップで作った専用環境のPythonで実行します。
+[CLIの具体例](docs/DESKTOP_GUIDE.md)を参照してください。
+
+私有音声・プロフィール・生成音声・モデル・実行環境・認証情報はGitや配布ZIPに含めません。

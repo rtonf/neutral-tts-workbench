@@ -18,8 +18,9 @@ The current host has Windows, Python 3.13.1, Tk 8.6 and an RTX 2060 SUPER with
 produced a 3.32-second WAV; peak allocated GPU memory in that run was
 4,424,197,120 bytes. The saved PCM file had zero clipped samples and its
 AudioSeal payload was detected. The operator reported intelligible speech with
-no obvious anomaly for that sentence. Long-input and GUI acceptance are recorded
-separately; this measurement does not establish minimum VRAM or other GPUs.
+no obvious anomaly for that sentence. Ordinary and two-chunk speech,
+GPU-active cancellation/recovery, fresh setup and installer lifecycle results
+are in [Windows acceptance](WINDOWS_ACCEPTANCE.md); this measurement does not establish minimum VRAM or other GPUs.
 The fixed setup uses Python 3.13 x64. CPU inference and other Python versions
 are unverified. New Windows and physically disconnected operation are not
 claimed by the agreed current-host acceptance. Code signing is outside this

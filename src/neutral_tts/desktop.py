@@ -318,7 +318,7 @@ class Desktop:
                         self.status.set("参照音声と許可範囲を保存・検査しました。推論資産の審査完了とは別です。")
                 elif operation == "environment":
                     from tkinter import messagebox
-                    messagebox.showinfo("環境確認", json.dumps(result, ensure_ascii=False, indent=2) + "\n実TTSのGPU・VRAM要件は未検証です。", parent=self.window)
+                    messagebox.showinfo("環境確認", json.dumps(result, ensure_ascii=False, indent=2) + "\n実TTSはRTX 2060 SUPER 8 GiB・CUDA/fp32で確認しています。最低VRAMや別GPUでの動作保証ではありません。", parent=self.window)
                 elif operation == "detect_watermark":
                     from tkinter import messagebox
                     messagebox.showinfo("保存WAVのAudioSeal検査", f"透かし検出のフレーム割合：{result['watermarked_frame_fraction']:.3f}\n埋め込んだ値の一致：{result['payload_matches']}\n音声長：{result['seconds']:.2f}秒　ピーク：{result['peak']:.3f}\nクリッピング：{result['clipped_samples']}サンプル\nSHA-256：{result['sha256']}\n\n検出は本人性・同意・作成元を証明しません。誤検出や改変による未検出があり得ます。", parent=self.window)

@@ -61,5 +61,9 @@ Windows. Staged files are created exclusively and their opened handle is proven
 to resolve below the guarded root before candidate bytes are written. Any
 reparse, identity, or parent-chain change fails closed.
 
-These are source-contract and synthetic-test results. Physical clean-device,
-offline, signing, and human acceptance remain pending.
+The desktop additionally exercised these transactions with actual generated
+WAVs on the agreed current Windows host. Its backups exclude output WAVs,
+registered reference copies, external runtime/assets and transient recovery
+state. Keep separate private copies of those files when migrating a machine.
+[Measured acceptance](WINDOWS_ACCEPTANCE.md) separates actual integration,
+synthetic failure tests, human listening and unverified environments.

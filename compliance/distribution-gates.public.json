@@ -55,7 +55,7 @@
       "gate_id": "installer",
       "status": "LOCAL_CANDIDATE_PENDING_ACCEPTANCE",
       "payload_present": false,
-      "required_evidence": ["owned_files_manifest", "clean_device_results", "uninstall_results", "rollback_results", "authority_approval"],
+      "required_evidence": ["owned_files_manifest", "current_host_installation:docs/WINDOWS_ACCEPTANCE.md", "uninstall_results", "rollback_results", "authority_approval"],
       "approval_authority": null,
       "approval_record": null
     },

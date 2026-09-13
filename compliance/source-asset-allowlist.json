@@ -47,7 +47,8 @@
     "SBOM.cdx.json",
     "SBOM.spdx.json",
     "SOURCE_MANIFEST.json",
-    "THIRD_PARTY_NOTICES.generated.md"
+    "THIRD_PARTY_NOTICES.generated.md",
+    "docs/WINDOWS_ACCEPTANCE.md"
   ],
   "required_disclosure_paths": [
     "THIRD_PARTY_NOTICES.md",

@@ -1,4 +1,4 @@
-# Unreleased local Windows source candidate
+# 0.1.0rc1 — unsigned Windows release candidate
 
 - Added a Tk desktop for input, persisted settings/dictionary, preview,
   generation, selected destination, verified history/playback and recovery.
@@ -27,20 +27,31 @@
 - Fixed synchronous memory playback on Python 3.11-3.13, whose Windows audio
   module does not expose the newer explicit synchronous flag.
 
-Current-host evidence includes ordinary and two-chunk real speech, final PCM16
-watermark checks, restored history with WAV retention, and cancellation followed
-by successful generation. Final dependency notices, installed-candidate
-acceptance, the 9 capability-dependent reparse cases and broader listening
-remain open. Other host/OS/GPU conditions and physical offline operation remain
-unverified. The current host is the agreed installation/uninstallation test
-scope. There is no EXE/MSI or bundled runtime. The desktop
-keeps at most 128 completed records per data folder in this candidate. Input is
-limited to 4096 characters, dictionary expansion to 16384, and boundary pauses
-to 10 seconds. No source or binary release has been approved or published.
+Current-host acceptance now includes a fresh guided setup from a locally
+copied/extracted ZIP, ordinary and two-chunk real speech, final PCM16 watermark
+checks, playback/history/restart, backup/restore, GPU-active cancellation and
+successful retry. Install/update/rollback/interrupted-update recovery and
+uninstall retained every tested WAV, settings file and unlisted user note.
+See [observed acceptance](WINDOWS_ACCEPTANCE.md) for the exact functional
+commit, measurements, counts and their limits.
 
-This development version remains `0.1.0.dev0`; commit and tree identify each
-immutable local candidate. Final release notes will name the approved version,
-tag, SHA-256 hashes, unsigned status, tested hardware and remaining user-facing limitations.
+The Windows builder now embeds SPDX/CycloneDX metadata for its selected source
+payload and supports a deterministic ZIP. The external inference inventory
+remains separate from the application's own MIT source. README contains the
+Japanese installation and first-generation steps. The setup dialog links the
+CUDA/cuDNN conditions separately from the model and Python package licenses.
+
+Ordinary/long human listening and the 9 capability-dependent symlink/reparse
+cases remain pending. The short sentence was accepted. Other OS/GPU/CPU and
+physical-offline conditions remain unverified. A fresh Windows system is not
+the agreed current-host acceptance scope. The desktop retains at most 128
+completed history records per data folder. Input is limited to 4096 characters,
+dictionary expansion to 16384, and boundary pauses to 10 seconds.
+
+The candidate version is `0.1.0rc1`; the proposed Git tag is `v0.1.0-rc.1`.
+Final publication approval, the exact final commit and artifact hashes, and
+actual GitHub acquisition checks remain required. No source or binary release
+has been approved or published by this record.
 
 This release is specified as an unsigned Python/Tk source-layout ZIP. Code
 signing is outside the release specification, not a passed test. Python 3.13

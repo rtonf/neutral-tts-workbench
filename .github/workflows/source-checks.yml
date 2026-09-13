@@ -24,4 +24,4 @@ jobs:
         shell: bash
         run: |
           mkdir -p .staging
-          python tools/build_windows_candidate.py --commit HEAD --destination .staging/windows-candidate
+          python tools/build_windows_candidate.py --commit HEAD --destination .staging/windows-candidate --archive .staging/windows-unsigned.zip

@@ -160,13 +160,24 @@ def _coerce_lock(lock: Mapping[str, Any] | str | Path) -> dict[str, Any]:
     return load_lock(lock) if not isinstance(lock, Mapping) else validate_lock(lock)
 
 
-def build_spdx_document(root: str | Path, commit: str, lock: Mapping[str, Any] | str | Path, *, allowlist: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def _selected_files(files, file_paths):
+    if file_paths is None:
+        return files, ""
+    paths = list(file_paths)
+    if not paths or len(paths) != len(set(paths)) or not set(paths) <= {entry["path"] for entry in files}:
+        raise SourceMetadataError("Selected metadata paths must be unique files in the exact Git tree.")
+    selected = [entry for entry in files if entry["path"] in set(paths)]
+    return selected, "\0selected-files:" + hashlib.sha256(_canonical(sorted(paths))).hexdigest()
+
+
+def build_spdx_document(root: str | Path, commit: str, lock: Mapping[str, Any] | str | Path, *, allowlist: Mapping[str, Any] | None = None, file_paths: Iterable[str] | None = None) -> dict[str, Any]:
     repo = Path(root).absolute()
     checked = _coerce_lock(lock)
     resolved = resolve_commit(repo, commit)
     tree, files = _tree_and_files(repo, resolved, allowlist)
+    files, scope = _selected_files(files, file_paths)
     created = _commit_created(repo, resolved)
-    namespace_digest = hashlib.sha256(f"{resolved}\0{tree}\0{lock_digest(checked)}".encode("ascii")).hexdigest()
+    namespace_digest = hashlib.sha256(f"{resolved}\0{tree}\0{lock_digest(checked)}{scope}".encode("ascii")).hexdigest()
     document_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"urn:neutral-tts:source:{namespace_digest}")
     project = checked["project"]
     project_id = _spdx_id("Package", project["id"])
@@ -219,7 +230,7 @@ def build_spdx_document(root: str | Path, commit: str, lock: Mapping[str, Any] |
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
         "SPDXID": "SPDXRef-DOCUMENT",
-        "name": f"{project['display_name']} source tree {resolved[:12]}",
+        "name": f"{project['display_name']} {'selected source payload' if scope else 'source tree'} {resolved[:12]}",
         "documentNamespace": f"urn:uuid:{document_uuid}",
         "creationInfo": {"created": created, "creators": ["Tool: neutral-source-metadata/1.0"]},
         "documentDescribes": [project_id],
@@ -230,7 +241,7 @@ def build_spdx_document(root: str | Path, commit: str, lock: Mapping[str, Any] |
     return document
 
 
-def build_cyclonedx_document(root: str | Path, commit: str, lock: Mapping[str, Any] | str | Path, *, allowlist: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def build_cyclonedx_document(root: str | Path, commit: str, lock: Mapping[str, Any] | str | Path, *, allowlist: Mapping[str, Any] | None = None, file_paths: Iterable[str] | None = None) -> dict[str, Any]:
     """Return a deterministic CycloneDX 1.7 SBOM for included source files.
 
     Excluded dependency-closure records intentionally remain in the generated
@@ -240,8 +251,9 @@ def build_cyclonedx_document(root: str | Path, commit: str, lock: Mapping[str, A
     checked = _coerce_lock(lock)
     resolved = resolve_commit(repo, commit)
     tree, files = _tree_and_files(repo, resolved, allowlist)
+    files, scope = _selected_files(files, file_paths)
     created = _commit_created(repo, resolved)
-    provenance = hashlib.sha256(f"{resolved}\0{tree}\0{lock_digest(checked)}\0cyclonedx-1.7".encode("ascii")).hexdigest()
+    provenance = hashlib.sha256(f"{resolved}\0{tree}\0{lock_digest(checked)}\0cyclonedx-1.7{scope}".encode("ascii")).hexdigest()
     serial = uuid.uuid5(uuid.NAMESPACE_URL, f"urn:neutral-tts:cyclonedx:{provenance}")
     project = checked["project"]
     project_ref = _cdx_ref("application", project["id"] + "\0" + resolved)
