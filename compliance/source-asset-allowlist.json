@@ -23,7 +23,8 @@
     "SBOM.cdx.json",
     "SBOM.spdx.json",
     "SOURCE_MANIFEST.json",
-    "THIRD_PARTY_NOTICES.generated.md"
+    "THIRD_PARTY_NOTICES.generated.md",
+    "OWNED_FILES.json"
   ],
   "asset_paths": [],
   "disclosure_paths": [

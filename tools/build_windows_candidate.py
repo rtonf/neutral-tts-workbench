@@ -30,6 +30,7 @@ def main():
     selected = {name: ("source" if name.endswith((".py", ".pyw")) else "documentation") for name in tracked
                 if (name.startswith("src/neutral_tts/") and name.endswith(".py"))
                 or name in {"launch_desktop.pyw", "windows_setup.pyw", "LICENSE", "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "config/tokenizer-windows-py313.lock.txt",
+                            "compliance/license-matrix.public.json", "compliance/distribution-gates.public.json",
                             "config/inference-assets.lock.json", "config/inference-sources.lock.json", "config/inference-wheels.lock.json", "config/inference-notices.lock.json", "config/inference-inventory.json"}
                 or (name.startswith("docs/") and name.endswith(".md"))}
     if not {"launch_desktop.pyw", "windows_setup.pyw", "src/neutral_tts/installer.py"} <= set(selected):
@@ -45,6 +46,8 @@ def main():
             target.write_bytes(git("show", commit + ":" + relative))
         lock = json.loads(git("show", commit + ":config/dependency-closure.lock.json"))
         allowlist = json.loads(git("show", commit + ":compliance/source-asset-allowlist.json"))
+        if not set(allowlist["required_disclosure_paths"]) <= set(selected):
+            raise ValueError("The Windows payload omits a required public disclosure.")
         source_paths = sorted(selected)
         for filename, builder in (("SBOM.spdx.json", build_spdx_document), ("SBOM.cdx.json", build_cyclonedx_document)):
             document = builder(repo, commit, lock, allowlist=allowlist, file_paths=source_paths)
