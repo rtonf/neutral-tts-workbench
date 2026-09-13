@@ -7,9 +7,12 @@ source-layout distribution with separately acquired inference assets.
 
 The functional candidate at `7e019bd3f8bae9e76ded8ca67c46cf2c74fe9936`
 was tested on Windows 11 x64, Python 3.13.1, Tk 8.6, RTX 2060 SUPER 8 GiB,
-CUDA/fp32 and the exact committed inference catalogs. Subsequent documentation,
-metadata and display changes require their own candidate checks. This record
-does not assign earlier evidence to changed execution code without validation.
+CUDA/fp32 and the exact committed inference catalogs. The updated packaging
+and display candidate at `426732afa747ace3b475335ad68da4d9897eacd1` was also
+installed and exercised with real generation. Later acceptance-record edits
+change documentation and the preparation-stage decision ledger; executable
+application code, build tools and inference catalogs remain unchanged. Final
+artifact hashes are supplied with the Release.
 
 | Operation | Actual observation |
 | --- | --- |
@@ -24,15 +27,30 @@ does not assign earlier evidence to changed execution code without validation.
 | Uninstall | Five WAV files, all 41 user-data files and an unlisted user memo retained byte-for-byte; owned app files removed from the active app folder |
 | Responsiveness | Event-loop callbacks continued while setup and generation workers were busy; duplicate generation callback started one worker |
 
-Machine checks do not evaluate intelligibility. The operator accepted the
-short sentence as intelligible with no obvious anomaly. Ordinary and long
-listening remain pending. Private recordings, generated samples, voice labels,
-screenshots with user paths and their private evidence records are not shipped.
+The packaging/display candidate completed installation, update, rollback,
+forced update interruption, recovery and update again. Its desktop generated
+the ordinary WAV with the same content hash as the accepted listening sample,
+detected its watermark and played it. Old environment calibration was excluded;
+a new successful receipt was used for subsequent estimates. A new desktop
+process verified five history records and playback. Uninstall preserved six
+WAV files, all 44 user-data files and the unlisted memo byte-for-byte.
 
-The full source suite at the stated commit ran 265 cases: 256 passed,
-9 skipped for unavailable symlink capability, no failures or errors. The skipped
-cases remain unpassed until executed with the required capability. They are
-not folded into the passing count or replaced with weaker assertions.
+Machine checks do not evaluate intelligibility. On 2026-09-13, the operator
+accepted the short, ordinary and long listening samples. This is acceptance of
+these private samples, not a guarantee for all texts or voices. Private
+recordings, generated samples, voice labels, screenshots with user paths and
+private evidence records are not shipped.
+
+The full suite at `426732afa747ace3b475335ad68da4d9897eacd1` ran 266 cases:
+257 passed, 9 skipped because the ordinary process could not create symlinks,
+with no failures or errors. On 2026-09-13, the exact nine skipped test methods
+were executed in one authorized elevated process against the fixed functional
+commit `7e019bd3f8bae9e76ded8ca67c46cf2c74fe9936`: all nine passed, with zero
+skips, failures or errors. These test methods and the exercised filesystem
+boundary checks are unchanged in the packaging/display candidate. The additional
+metadata test is included in its 257 passing cases. This is combined scoped
+coverage from two runs; it is not a claim that the original unelevated run had
+no skips. No host network or security settings were changed.
 
 Actual inference child processes reached 7,860,310,016 bytes of peak working
 set and 13,462,994,944 bytes of peak private committed memory. Sampling was

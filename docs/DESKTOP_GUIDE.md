@@ -150,8 +150,9 @@ attention and is retained. Keep all retained folders until recovery completes.
 This is a Python/Tk source installer, not an EXE/MSI or a self-contained runtime.
 Current-host installation, real generation, update/rollback/interruption,
 restart/playback and uninstall with retained user data have been exercised.
-The 9 capability-dependent reparse cases and broader human listening remain
-separate acceptance items. New Windows and physical-offline use are unverified;
+The 9 capability-dependent reparse cases passed in the authorized elevated
+run, and short, ordinary and long human listening samples were accepted.
+New Windows and physical-offline use are unverified;
 code signing is outside the agreed release scope. Final public acquisition
 requires publication approval. See [measured acceptance](WINDOWS_ACCEPTANCE.md)
 and [reproducible builds](WINDOWS_BUILD.md). A checksum detects changed bytes;

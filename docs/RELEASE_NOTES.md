@@ -41,17 +41,20 @@ remains separate from the application's own MIT source. README contains the
 Japanese installation and first-generation steps. The setup dialog links the
 CUDA/cuDNN conditions separately from the model and Python package licenses.
 
-Ordinary/long human listening and the 9 capability-dependent symlink/reparse
-cases remain pending. The short sentence was accepted. Other OS/GPU/CPU and
+Short, ordinary and long human listening samples were accepted. The 9
+capability-dependent symlink/reparse cases passed in one authorized elevated
+run, with zero skips, failures or errors. The ordinary full-suite run passed
+257 cases and retained its 9 recorded skips; the extra run closes their
+capability coverage without rewriting the original result. Other OS/GPU/CPU and
 physical-offline conditions remain unverified. A fresh Windows system is not
 the agreed current-host acceptance scope. The desktop retains at most 128
 completed history records per data folder. Input is limited to 4096 characters,
 dictionary expansion to 16384, and boundary pauses to 10 seconds.
 
-The candidate version is `0.1.0rc1`; the proposed Git tag is `v0.1.0-rc.1`.
-Final publication approval, the exact final commit and artifact hashes, and
-actual GitHub acquisition checks remain required. No source or binary release
-has been approved or published by this record.
+The candidate version is `0.1.0rc1`; its release tag is `v0.1.0-rc.1`.
+The Release identifies the exact approved commit and artifact hashes. The
+preparation-stage acceptance record remains separate from publication approval
+and actual GitHub clone/download verification.
 
 This release is specified as an unsigned Python/Tk source-layout ZIP. Code
 signing is outside the release specification, not a passed test. Python 3.13

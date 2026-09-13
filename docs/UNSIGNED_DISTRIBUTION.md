@@ -4,10 +4,10 @@
 「今回の配布仕様では対象外」です。署名済み・署名検証合格とは扱いません。
 Python 3.13の64 bit版とTcl/Tkを別途用意する必要があります。
 
-正式な公開予定先は [rtonf/neutral-tts-workbench](https://github.com/rtonf/neutral-tts-workbench)
-です。現時点では公開前です。最終承認後のReleaseには、バージョン、tag、対応する
-完全なcommit、配布ZIPとSHA256SUMS.txtを掲載します。現在の開発候補を公開済み
-Releaseとして扱わないでください。
+公開元は [rtonf/neutral-tts-workbench](https://github.com/rtonf/neutral-tts-workbench)
+です。対象Releaseに記載されたバージョン、tag、完全なcommit、配布ZIPと
+SHA256SUMS.txtを確認してください。ローカルで作成した開発候補と公開Releaseは
+それぞれのcommitとファイルハッシュで識別します。
 
 ダウンロードしたZIPを展開する前に、PowerShellで確認します。
 ファイル名は対象Releaseに記載された実際の名前を指定してください。

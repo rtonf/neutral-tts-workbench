@@ -5,10 +5,10 @@ Windowsで日本語の音声をローカル生成するデスクトップアプ�
 実生成と同じトークナイザーで分割・トークン数・保存名を確認し、条件が変わった場合は
 再プレビューを求めます。重い処理は別プロセスで実行し、中断後は保存済み音声を検査します。
 
-**0.1.0rc1の公開候補を準備中です。現在は公開承認前です。**
+**0.1.0rc1は、未署名のWindows向けリリース候補です。**
 通常文・長文の実生成と、このWindowsホストでの導入・更新・復旧・削除を確認しました。
-通常文・長文の本人による試聴評価と、権限依存の9件の試験は未完です。
-[6項目の残工程](docs/RELEASE_NO_GO.md)と[実測した条件](docs/WINDOWS_ACCEPTANCE.md)を確認してください。
+短文・通常文・長文の試聴評価と、権限依存の9件の追加試験も完了しています。
+[6項目の検証範囲](docs/RELEASE_NO_GO.md)と[実測した条件](docs/WINDOWS_ACCEPTANCE.md)を確認してください。
 
 ## 導入と最初の生成
 
@@ -17,7 +17,7 @@ Python 3.13 x64とTcl/Tkを[Python公式配布](https://www.python.org/downloads
 用意してください。検証した版はPython 3.13.1・Tk 8.6です。
 コード署名は今回の配布仕様では対象外で、署名検証済みとは扱いません。
 
-1. 公開承認後、対象ReleaseのWindows ZIPとSHA256SUMS.txtを取得します。
+1. [対象Release](https://github.com/rtonf/neutral-tts-workbench/releases)のWindows ZIPとSHA256SUMS.txtを取得します。
    [ハッシュ照合手順](docs/UNSIGNED_DISTRIBUTION.md)で確認してから展開します。
 2. 展開先で `python windows_setup.pyw` を実行します。アプリ配置先と利用者データを確認し、
    「インストール」を押します。アプリ配置先の末尾は `neutral-tts-workbench` にします。

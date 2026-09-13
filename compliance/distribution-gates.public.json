@@ -53,7 +53,7 @@
     },
     {
       "gate_id": "installer",
-      "status": "LOCAL_CANDIDATE_PENDING_ACCEPTANCE",
+      "status": "BLOCKED_PENDING_AUTHORITY_DECISION",
       "payload_present": false,
       "required_evidence": ["owned_files_manifest", "current_host_installation:docs/WINDOWS_ACCEPTANCE.md", "uninstall_results", "rollback_results", "authority_approval"],
       "approval_authority": null,
