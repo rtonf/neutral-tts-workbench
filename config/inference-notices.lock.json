@@ -1,0 +1,41 @@
+{
+  "schema_version": "neutral-inference-notices-v1",
+  "notices": [
+    {
+      "id": "ffmpy",
+      "version": "1.0.0",
+      "source_revision": "3b3c56f3ef04b3868b401c3fa2cc6ea294b78dfb",
+      "url": "https://raw.githubusercontent.com/Ch00k/ffmpy/3b3c56f3ef04b3868b401c3fa2cc6ea294b78dfb/LICENSE",
+      "size": 1059,
+      "sha256": "19ee5defbb6148c54c2d605adddbb49e37b1f37fbf18e5b45e4e1fae94be5331",
+      "license": "MIT"
+    },
+    {
+      "id": "tokenizers",
+      "version": "0.22.2",
+      "source_revision": "f383101a26663708484cac0727792aad74f78234",
+      "url": "https://raw.githubusercontent.com/huggingface/tokenizers/f383101a26663708484cac0727792aad74f78234/LICENSE",
+      "size": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "license": "Apache-2.0"
+    },
+    {
+      "id": "tqdm",
+      "version": "4.70.1",
+      "source_revision": "9cf5a12b1f955468a17f0ba3c59092b23e4258ac",
+      "url": "https://raw.githubusercontent.com/tqdm/tqdm/9cf5a12b1f955468a17f0ba3c59092b23e4258ac/LICENCE",
+      "size": 1985,
+      "sha256": "fcff87c3a47ce8028a8512aa182d4fcf0ad1c90544ee75cf9b343684cac194de",
+      "license": "MPL-2.0 AND MIT"
+    },
+    {
+      "id": "tensorboard-data-server",
+      "version": "0.7.2",
+      "source_revision": "8343cad89d984c199637ead11c8d4c053191673a",
+      "url": "https://raw.githubusercontent.com/tensorflow/tensorboard/8343cad89d984c199637ead11c8d4c053191673a/LICENSE",
+      "size": 11416,
+      "sha256": "d7c9068d896188264b60827b8cd1e25fdb9f5b5cad0b1589e90b96c87729c404",
+      "license": "Apache-2.0"
+    }
+  ]
+}

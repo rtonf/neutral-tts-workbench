@@ -141,7 +141,8 @@ def _flush_directory(directory: Path) -> None:
 
 
 def _atomic_json(path: Path, payload: object, guard: DirectoryGuard | None = None) -> None:
-    temporary = path.with_name(path.name + ".tmp-" + uuid.uuid4().hex)
+    # Avoid extending an already long quarantine reason basename on Windows.
+    temporary = path.with_name(".tmp-" + uuid.uuid4().hex)
     data = _canonical(payload)
     try:
         handle_context = (

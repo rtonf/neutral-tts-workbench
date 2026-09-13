@@ -2,43 +2,62 @@
 
 This candidate adds a Tk desktop and a working source installer. It is unsigned
 and requires a separately installed Python with Tk. It does not bundle Python,
-native libraries, inference engines, models or reference recordings. Fresh
-Windows acceptance and real speech acceptance remain incomplete.
+native libraries, inference engines, models or reference recordings. The agreed
+acceptance uses an isolated installation on the current Windows host. No new
+Windows or physical offline result is inferred from it.
 
 ## Start and configure
 
 1. From the repository, run `python launch_desktop.pyw`, or set `PYTHONPATH=src`
    in PowerShell and run `python -m neutral_tts.desktop`. Python 3.13.1/Tk 8.6 is
-   the current host test condition; the declared Python floor is 3.11 and has not
-   yet been tested on a new Windows device.
+   the current host test condition. The fixed Windows setup requires x64 Python
+   3.13; the broader source-core version declaration is not a Windows support claim.
 2. The first-run tab shows the user data folder and WAV destination. Select a
    dedicated folder outside the application and data folders. Existing history
    stays associated with that destination; use a separate data folder when
    switching destinations after generation.
-3. Run the environment check. The tokenizer download button lists the official
+3. Run the environment check. For real speech, use "参照音声と利用範囲を登録" to
+   select one to four mono PCM16 WAVs at 44.1/48 kHz, each at most 30 seconds and
+   6 MiB. Enter recording permission, explicit voice replication consent and the
+   generated-audio use scope separately. An optional local evidence attachment
+   is supported. The form preserves the originals and stores private copies.
+4. Open "実生成の初回セットアップ". Read the Japanese use conditions and linked
+   component review, select an empty dedicated setup folder with 16 GiB free,
+   choose CUDA/fp32 (or the currently unverified CPU/fp32 mode), and start setup.
+   The app acquires fixed source archives, builds reproducible source wheels
+   without executing upstream setup scripts, downloads fixed binary wheels and
+   about 3.59 GB of model assets, then writes the tokenizer/runtime/rights
+   configuration. The AudioSeal alternative is explicitly identified. Runtime
+   weights are not included in the application ZIP. Complete files are checked
+   and reused after a failed transfer; ordinary failures clean their temporary
+   download. Process termination can leave temporary files in the dedicated
+   setup folder. A differing completed file is rejected for investigation.
+5. The tokenizer-only buttons remain available when only preview is needed.
+   The tokenizer download button lists the official
    source and immutable revision, downloads about 8.6 MB, checks exact sizes and
    SHA-256 values, preserves the license, and writes the configuration. Re-run it
    after a failed transfer; completed files are verified and reused. Existing
    mismatching files are rejected, not overwritten. Partial transfers are retained
    under `.download-*` for local inspection, outside source distribution.
-4. On Windows/Python 3.13 use the dedicated-environment button to install the 20
+   On Windows/Python 3.13 use its dedicated-environment button to install the 20
    hash-pinned tokenizer dependencies into an empty selected folder. Setup keeps
    a local interpreter binding and reuses it after restart. Other configurations
    need the environment described in [TOKENIZER_SETUP.md](TOKENIZER_SETUP.md). Launch with
    `python -m neutral_tts.desktop --worker-python <python-executable>` to select
    it. No inference engine or PyTorch is installed by this tokenizer setup.
-5. Enter optional dictionary rows as surface text, TAB, reading. Save settings
+6. Enter optional dictionary rows as surface text, TAB, reading. Save settings
    and dictionary before preview. Input text is kept in the current window;
    settings and dictionary are stored only in the selected local data folder.
-6. Preview uses the real tokenizer. It reports chunks, tokens, filename and the
+7. Preview uses the real tokenizer. It reports chunks, tokens, filename and the
    user's complete destination path. Uncalibrated duration/storage ranges are
    deliberately broad; generation-time estimates are unavailable without valid
    measurements. They are not performance claims.
-7. Generation requires the reviewed local runtime configuration described in
-   [LOCAL_RUNTIME.md](LOCAL_RUNTIME.md), including rights evidence files and a
-   consented recording. The setup screen currently accepts that configuration;
-   guided creation of a complete inference configuration remains unfinished.
-   No unreviewed watermark checkpoint is downloaded by setup.
+8. Generate from the preview. The runtime uses the same embedded tokenizer and
+   rejects changed conditions. The configuration is created by the wizard;
+   hand-writing the JSON described in [LOCAL_RUNTIME.md](LOCAL_RUNTIME.md) is
+   unnecessary for the fixed setup. History offers verified playback and a
+   separate AudioSeal check of the final saved WAV. A successful watermark
+   result does not prove identity or consent.
 
 The explicit synthetic-test checkbox uses a demo counter and generates silence.
 It is suitable for exercising save, history and recovery without a voice. It
@@ -58,8 +77,10 @@ A private preview ticket binds source hash, dictionary, settings, tokenizer
 assets, runtime configuration bytes, installed code/native-file fingerprint,
 directory identities and planned filename. Changed conditions require another
 preview. Runtime history also binds the environment fingerprint; this detects
-changes but does not establish a reproducible dependency closure or license
-approval. The package/file inventory still needs full engine-closure acceptance.
+changes, including same-version code changes, transitive dependencies, added
+package modules, Python library files and native binaries. It does not establish
+license approval. The installation uses the exact wheel/source/asset catalogs;
+final environment reproduction and real use are separate acceptance evidence.
 
 Console equivalents after desktop setup:
 

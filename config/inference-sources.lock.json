@@ -1,0 +1,151 @@
+{
+  "schema_version": "neutral-inference-sources-v1",
+  "recipes": [
+    {
+      "id": "engine",
+      "distribution": "irodori_tts",
+      "version": "0.1.0+ntts.8ca3acb58ab4",
+      "packages": [
+        "irodori_tts"
+      ],
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "dependencies": [
+        "dacvae>=1.0.0",
+        "numpy",
+        "PyYAML",
+        "safetensors>=0.8.0",
+        "soundfile",
+        "torch==2.10.0+cu128",
+        "torchaudio==2.10.0+cu128",
+        "transformers==5.14.1"
+      ],
+      "data_suffixes": [],
+      "format": "zip",
+      "url": "https://codeload.github.com/Aratako/Irodori-TTS/zip/8ca3acb58ab4e19ad6d594aaed6bafe3e88f7f71",
+      "size": 509190,
+      "sha256": "f5fccadc766bfee753cbb18f651cc36ec5ee30246c5bd9c2a8844c495c12b54a",
+      "revision": "8ca3acb58ab4e19ad6d594aaed6bafe3e88f7f71",
+      "wheel_sha256": "cb03239d09b08ef022ed298b790f4dcf4d4fcbd39eea9c5b24aff44c6fe755fd",
+      "wheel_file": "irodori_tts-0.1.0+ntts.8ca3acb58ab4-py3-none-any.whl"
+    },
+    {
+      "id": "codec",
+      "distribution": "dacvae",
+      "version": "1.0.0+ntts.414c20785fc3",
+      "packages": [
+        "dacvae"
+      ],
+      "license": "Apache-2.0",
+      "license_file": "LICENSE",
+      "dependencies": [
+        "argbind>=0.3.7",
+        "descript-audiotools>=0.7.2",
+        "einops",
+        "huggingface-hub",
+        "numpy",
+        "torch",
+        "torchaudio",
+        "tqdm"
+      ],
+      "data_suffixes": [],
+      "format": "zip",
+      "url": "https://codeload.github.com/facebookresearch/dacvae/zip/414c20785fc3a28373073ea8ef7a1316eeeaca6e",
+      "size": 31258,
+      "sha256": "f8ca32de462acc6405d2b07e07f284c56ebddb79e2501b1bb3dd408ac34072b3",
+      "revision": "414c20785fc3a28373073ea8ef7a1316eeeaca6e",
+      "wheel_sha256": "ff88a18807413c3769506c42d19b67a01a3b9aa0ccd897417c1ecdf7ea96e5f8",
+      "wheel_file": "dacvae-1.0.0+ntts.414c20785fc3-py3-none-any.whl"
+    },
+    {
+      "id": "audio-tools",
+      "distribution": "descript_audiotools",
+      "version": "0.7.4+ntts.348ebf2034ce",
+      "packages": [
+        "audiotools"
+      ],
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "dependencies": [
+        "argbind",
+        "numpy",
+        "soundfile",
+        "pyloudnorm",
+        "importlib-resources",
+        "scipy",
+        "torch",
+        "julius",
+        "torchaudio",
+        "ffmpy",
+        "ipython",
+        "rich",
+        "matplotlib",
+        "librosa",
+        "pystoi",
+        "torch-stoi",
+        "flatten-dict",
+        "markdown2",
+        "randomname",
+        "protobuf>=3.19.6,!=4.24.0,<5.0.0",
+        "tensorboard",
+        "tqdm"
+      ],
+      "data_suffixes": [
+        ".html",
+        ".css"
+      ],
+      "format": "zip",
+      "url": "https://codeload.github.com/descriptinc/audiotools/zip/348ebf2034ce24e2a91a553e3171cb00c0c71678",
+      "size": 197541,
+      "sha256": "cef107ea5daca6114e79f5e46bfd3afe2d6c65fad8c04ff7a5f4f02fd6350c55",
+      "revision": "348ebf2034ce24e2a91a553e3171cb00c0c71678",
+      "wheel_sha256": "02ef991121952bc9ffca2a2b89046af9c5363adbfb716fc61938507bf07c7fc9",
+      "wheel_file": "descript_audiotools-0.7.4+ntts.348ebf2034ce-py3-none-any.whl"
+    },
+    {
+      "id": "argbind",
+      "distribution": "argbind",
+      "version": "0.3.9+ntts.1",
+      "packages": [
+        "argbind"
+      ],
+      "license": "MIT",
+      "license_file": "LICENSE.md",
+      "dependencies": [
+        "PyYAML",
+        "docstring-parser"
+      ],
+      "data_suffixes": [],
+      "format": "tar.gz",
+      "url": "https://files.pythonhosted.org/packages/8e/25/4422cf7777c0cedd2fbcbdf8face786be76186e6d2e7b66f5f37e266b604/argbind-0.3.9.tar.gz",
+      "size": 17567,
+      "sha256": "1b159c04af56858a91d59c7a47bc9ea39d96adfce1d7fcfa38050d7ac9815745",
+      "revision": "0.3.9",
+      "wheel_sha256": "1fbccd492e05b60cacb34e62618edbb56d4fd1b06a944db7c0ea78193d899dc6",
+      "wheel_file": "argbind-0.3.9+ntts.1-py3-none-any.whl"
+    },
+    {
+      "id": "randomname",
+      "distribution": "randomname",
+      "version": "0.2.1+ntts.1",
+      "packages": [
+        "randomname"
+      ],
+      "license": "MIT",
+      "license_file": "LICENSE",
+      "dependencies": [
+        "fire"
+      ],
+      "data_suffixes": [
+        ".txt"
+      ],
+      "format": "tar.gz",
+      "url": "https://files.pythonhosted.org/packages/e8/c2/525e9e9b458c3ca493d9bd0871f3ed9b51446d26fe82d462494de188f848/randomname-0.2.1.tar.gz",
+      "size": 64242,
+      "sha256": "b79b98302ba4479164b0a4f87995b7bebbd1d91012aeda483341e3e58ace520e",
+      "revision": "0.2.1",
+      "wheel_sha256": "4ac628b7338d48843eddd15c907216423d53eb18139475490847a625aa1179b2",
+      "wheel_file": "randomname-0.2.1+ntts.1-py3-none-any.whl"
+    }
+  ]
+}

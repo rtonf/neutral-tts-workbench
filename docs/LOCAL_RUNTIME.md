@@ -2,10 +2,13 @@
 
 The `real-run` command uses the supplied local host. It requires a separately
 installed, reviewed inference environment and a private runtime JSON file.
-The source repository does not currently supply an approved dependency bundle,
-model download workflow, GUI, or tested Windows installer. Those remain release
-requirements. A synthetic test passing does not establish real inference or
-audio quality.
+For normal desktop use, [guided inference setup](DESKTOP_GUIDE.md) creates this
+private configuration, downloads the fixed reviewed artifacts and saves the
+separate interpreter selection. Users do not need to write JSON by hand.
+The configuration below documents the lower-level host interface. Model and
+native-runtime bytes are separately downloaded, not included in the source
+installer. Actual current-host tests and remaining acceptance conditions are
+listed in [the product scope](PRODUCT_SCOPE.md).
 
 Run the host in a dedicated CLI process with `PYTHONPATH=src` when using a source
 checkout. After preparing the private configuration and input:

@@ -30,7 +30,7 @@
           "status": {
             "enum": [
               "BLOCKED_PENDING_AUTHORITY_DECISION", "NOT_APPROVED", "NOT_REVIEWED",
-              "CONTRACT_ONLY_NO_ARTIFACT", "LOCAL_CANDIDATE_PENDING_ACCEPTANCE", "UNSIGNED", "APPROVED"
+              "CONTRACT_ONLY_NO_ARTIFACT", "LOCAL_CANDIDATE_PENDING_ACCEPTANCE", "UNSIGNED", "APPROVED", "OUT_OF_SCOPE_UNSIGNED_RELEASE"
             ]
           },
           "payload_present": {"type": "boolean"},
@@ -55,6 +55,9 @@
             "approval_authority": {"type": "null"},
             "approval_record": {"type": "null"}
           }}
+        }, {
+          "if": {"properties": {"status": {"const": "OUT_OF_SCOPE_UNSIGNED_RELEASE"}}},
+          "then": {"properties": {"gate_id": {"const": "signing"}, "payload_present": {"const": false}}}
         }]
       }
     }

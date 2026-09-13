@@ -12,7 +12,7 @@ import json
 import re
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -139,7 +139,7 @@ class Workbench:
             raise WorkbenchError("Recovery selection is invalid.")
         return _safe_directory(str(self.root / "work" / state["directory"]), label="recovery workspace")
 
-    def _service(self, config, dictionary, context, *, binding=None, demo=False, counter=None):
+    def _service(self, config, dictionary, context, *, binding=None, demo=False, counter=None, runtime_context=None):
         recovery = self._recovery_root()
         identity = "demo-tokenizer-v1" if demo else binding.tokenizer_identity
         settings = PersistedSettings(
@@ -151,8 +151,37 @@ class Workbench:
             runtime_config_digest=digest_object({"config": config, "tokenizer": identity}),
             voice_rights_manifest_sha256=digest_object({"demo": True}) if demo else getattr(binding, "voice_rights_manifest_sha256", "0" * 64),
         )
-        return ApplicationService(counter or (demo_token_counter if demo else binding.token_counter), settings,
-                                  backend=DEMO_SILENCE_ONLY() if demo else getattr(binding, "backend", None))
+        selected_counter = counter or (demo_token_counter if demo else binding.token_counter)
+        backend = DEMO_SILENCE_ONLY() if demo else getattr(binding, "backend", None)
+        if runtime_context is not None:
+            from .estimation import calibration_from_receipts, make_calibration_key
+            settings = replace(settings, **runtime_context)
+            service = ApplicationService(selected_counter, settings, backend)
+            service.startup()
+            key = make_calibration_key(settings.device_class, settings.plan_settings.quality,
+                                       settings.plan_settings.reading, identity)
+            receipts = [record.receipt for record in service.history_records()
+                        if record.runtime_config_digest == settings.runtime_config_digest
+                        and record.voice_rights_manifest_sha256 == settings.voice_rights_manifest_sha256
+                        and record.backend_identity != DEMO_SILENCE_ONLY.backend_identity]
+            settings = replace(settings, calibration=calibration_from_receipts(key, receipts))
+        return ApplicationService(selected_counter, settings, backend)
+
+    @staticmethod
+    def _estimate_context(config, environment):
+        if not config["runtime_config"]:
+            return None
+        raw = _read(Path(config["runtime_config"]), limit=MAX_CONFIG_BYTES)
+        value = _object(raw)
+        device, precision = value.get("device"), value.get("precision")
+        rights = value.get("rights_manifest_sha256")
+        if device not in {"cpu", "cuda"} or precision not in {"fp32", "bf16"} or not isinstance(rights, str) or not re.fullmatch(r"[0-9a-f]{64}", rights):
+            raise WorkbenchError("Runtime estimate identity is invalid.")
+        # Identity only: preview never loads inference or watermark weights.
+        # Full asset, reference and rights admission still occurs at generation.
+        digest = hashlib.sha256((hashlib.sha256(raw).hexdigest() + environment).encode()).hexdigest()
+        return {"device_class": f"local-{device}-{precision}", "runtime_config_digest": digest,
+                "voice_rights_manifest_sha256": rights}
 
     def _history_service(self, config):
         # History recovery does not load the tokenizer, inference code or weights.
@@ -188,8 +217,13 @@ class Workbench:
             if config is None:
                 raise WorkbenchError("Complete initial setup first.")
             binding = None if demo else load_tokenizer(Path(config["tokenizer_config"]))
+            environment = None
+            if not demo:
+                from .environment_binding import environment_digest
+                environment = environment_digest()
             context = self._new_context(config)
-            service = self._service(config, self._bounded_dictionary(text), context, binding=binding, demo=demo)
+            service = self._service(config, self._bounded_dictionary(text), context, binding=binding, demo=demo,
+                                    runtime_context=None if demo else self._estimate_context(config, environment))
             service.startup()
             preview = service.preview(text)
             ticket = {"schema_version": "neutral-preview-ticket-v1", "context": asdict(context),
@@ -199,8 +233,7 @@ class Workbench:
                       "roots": preview.root_identity_digest, "preview": preview.public_payload()}
             ticket["runtime_bytes"] = self._runtime_bytes(config) if not demo else None
             if not demo:
-                from .environment_binding import environment_digest
-                ticket["environment"] = environment_digest()
+                ticket["environment"] = environment
             write_private(self.ticket_path, ticket)
             return {"preview": preview.public_payload(), "demo": demo,
                     "destination": str(Path(config["output_directory"]) / preview.candidate_wav_name)}
@@ -221,10 +254,12 @@ class Workbench:
                 raise StalePreviewError("Runtime configuration changed.")
             if not demo:
                 from .environment_binding import environment_digest
-                if environment_digest() != ticket.get("environment"):
+                environment = environment_digest()
+                if environment != ticket.get("environment"):
                     raise StalePreviewError("Installed code or native dependencies changed.")
             context = FilenameContext(**ticket["context"])
-            service = self._service(config, self._bounded_dictionary(text), context, binding=preview_binding, demo=demo)
+            service = self._service(config, self._bounded_dictionary(text), context, binding=preview_binding, demo=demo,
+                                    runtime_context=None if demo else self._estimate_context(config, environment))
             fresh = service.preview(text)
             if any((fresh.source_digest != ticket["source"], fresh.settings_digest != ticket["settings"],
                     fresh.root_identity_digest != ticket["roots"], fresh.public_payload() != ticket["preview"])):
@@ -233,9 +268,13 @@ class Workbench:
                 binding = load_local_runtime(Path(config["runtime_config"]))
                 if binding.tokenizer_identity != preview_binding.tokenizer_identity:
                     raise StalePreviewError("Preview and generation tokenizers differ.")
+                current = service._current_settings()
+                if (binding.runtime_config_digest != current.runtime_config_digest
+                        or binding.voice_rights_manifest_sha256 != current.voice_rights_manifest_sha256
+                        or binding.device_class != current.device_class):
+                    raise StalePreviewError("Runtime or environment changed during admission.")
                 # Recount via the runtime binding before admission, preserving the
                 # exact preview settings and then supplying the verified rights hash.
-                from dataclasses import replace
                 settings = replace(service._current_settings(),
                                    runtime_config_digest=binding.runtime_config_digest,
                                    voice_rights_manifest_sha256=binding.voice_rights_manifest_sha256)
@@ -283,6 +322,20 @@ class Workbench:
             artifact = _create_backup_artifact_owned(self.root, Path(archive))
             return {"sha256": artifact.archive_sha256, "bytes": artifact.archive_size,
                     "excludes": ["output_wav", "external_assets", "transient_recovery", "preview", "logs"]}
+
+    def detect_watermark(self, run_id):
+        with self.owned():
+            config = self.configuration()
+            records = self._history_service(config).history_records(run_id)
+            if len(records) != 1:
+                raise WorkbenchError("The selected WAV is missing or changed.")
+            runtime = read_private(Path(config["runtime_config"]))
+            if runtime.get("watermark_kind") != "audioseal-16bit-cpu":
+                raise WorkbenchError("This detector requires the configured AudioSeal alternative.")
+            from .local_runtime import _relative, _absolute
+            from .audioseal_runtime import detect_saved_wav
+            directory = _relative(_absolute(runtime["asset_root"]), runtime["watermark"])
+            return detect_saved_wav(directory, records[0])
 
     def restore(self, archive):
         with self.owned():

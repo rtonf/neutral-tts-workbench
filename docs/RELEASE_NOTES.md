@@ -7,6 +7,13 @@
   requires the saved preview ticket.
 - Added pinned tokenizer acquisition, license preservation, hashing, resumable
   setup and a dedicated Windows/Python 3.13 dependency environment.
+- Added full inference setup with fixed source, wheel and model catalogs,
+  separate reference-use statements, restricted codec loading and an explicit
+  AudioSeal alternative with saved-WAV detection. The GUI now completes real
+  input, preview, generation, save, playback, history and recovery operations.
+- Connected verified success receipts to time estimates for the same assets,
+  references and installed environment. Software, device or driver changes
+  invalidate those calibration values. Preview does not load inference weights.
 - Added private worker processes with Windows process-tree lifetime ownership,
   cancellation recovery, shared data locks and stale-plan rejection.
 - Integrated actual settings/dictionary/history with backup and restore. WAVs
@@ -20,15 +27,25 @@
 - Fixed synchronous memory playback on Python 3.11-3.13, whose Windows audio
   module does not expose the newer explicit synchronous flag.
 
-Known limitations: real inference and saved-WAV watermark detection remain
-unaccepted; inference setup still needs a reviewed complete configuration;
-engine/native dependency closure, new Windows/GPU tests, the 9 Windows
-capability-dependent reparse cases, physical offline operation, signing and
-human listening remain open. There is no EXE/MSI or bundled runtime. The desktop
+Current-host evidence includes ordinary and two-chunk real speech, final PCM16
+watermark checks, restored history with WAV retention, and cancellation followed
+by successful generation. Final dependency notices, installed-candidate
+acceptance, the 9 capability-dependent reparse cases and broader listening
+remain open. Other host/OS/GPU conditions and physical offline operation remain
+unverified. The current host is the agreed installation/uninstallation test
+scope. There is no EXE/MSI or bundled runtime. The desktop
 keeps at most 128 completed records per data folder in this candidate. Input is
 limited to 4096 characters, dictionary expansion to 16384, and boundary pauses
 to 10 seconds. No source or binary release has been approved or published.
 
 This development version remains `0.1.0.dev0`; commit and tree identify each
 immutable local candidate. Final release notes will name the approved version,
-tag, hashes, signatures, tested hardware and remaining user-facing limitations.
+tag, SHA-256 hashes, unsigned status, tested hardware and remaining user-facing limitations.
+
+This release is specified as an unsigned Python/Tk source-layout ZIP. Code
+signing is outside the release specification, not a passed test. Python 3.13
+with Tcl/Tk is a separate prerequisite. Warnings associated with an actual
+GitHub download will be checked after publication approval; their appearance
+cannot be inferred from a locally copied archive.
+Follow [download verification](UNSIGNED_DISTRIBUTION.md) and preserve Windows
+security protections.

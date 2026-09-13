@@ -1,7 +1,9 @@
 # Neutral TTS Workbench (development name)
 
-This is a TTS desktop under development, with a local Python/Tk Windows installer
-candidate. Start with [the desktop guide](docs/DESKTOP_GUIDE.md) and
+This desktop generates speech locally, previews the exact text plan, and keeps
+WAV files in a folder selected by the user. The Windows candidate uses a
+Python/Tk installer and guided setup for a separate inference environment.
+Start with [the desktop guide](docs/DESKTOP_GUIDE.md) and
 [the current feature scope](docs/PRODUCT_SCOPE.md). The source provides:
 
 1. safe, previewable WAV filename templates with Windows-safe normalization
@@ -36,10 +38,32 @@ See [local runtime configuration](docs/LOCAL_RUNTIME.md).
 
 The project source is licensed under [MIT](LICENSE), copyright 2026 rtonf.
 Third-party components keep their own conditions. Public release readiness is
-`NO-GO`: real-model, dependency-rights, installer, clean-device, signature, and
-human acceptance work remains. Isolated local candidates using verified
-components may be constructed for acceptance testing. See
+`NO-GO` pending final dependency notices, frozen-candidate acceptance and
+publication approval. Real short, ordinary and multi-chunk speech has been
+generated through the desktop on one Windows 11 host. Saved-WAV watermark
+detection, playback, history, restore and cancellation recovery were exercised.
+The short listening sample was accepted; broader listening and final installed
+candidate acceptance are tracked separately. See
 [release status](docs/RELEASE_NO_GO.md) for the current boundaries.
+
+The Windows release format is an **unsigned Python/Tk source-layout ZIP**.
+Code signing is outside this release specification; no signature validation is
+claimed. Python 3.13 with Tcl/Tk must be installed separately. See
+[download verification and Windows warnings](docs/UNSIGNED_DISTRIBUTION.md).
+
+The tested inference condition is Windows 11 x64, Python 3.13, an NVIDIA
+RTX 2060 SUPER with 8 GiB VRAM, and CUDA/fp32. This is a tested configuration,
+not a minimum-GPU claim. Other GPUs, CPU inference, other Windows versions and
+a freshly installed Windows system remain unverified. Current-host installation
+and uninstallation are the acceptance scope of this release candidate.
+
+In the desktop, register your own authorized reference recording, record the
+three permission scopes, and run the full inference setup. Choose a dedicated
+folder with at least 16 GiB free. Setup explains conditions, retrieves fixed
+official artifacts, verifies their hashes, installs a separate environment and
+saves the local settings. Then select the WAV folder, save settings, preview
+the input and generate. The [component conditions](docs/INFERENCE_COMPONENTS.md)
+apply separately from this project's MIT license.
 
 For source development with Python 3.11 or later, run commands from the source
 checkout with `PYTHONPATH=src`. Run a synthetic preview with
@@ -56,8 +80,10 @@ setup. The console does not automatically switch to the desktop's worker Python.
 See the explicit PowerShell commands in [the desktop guide](docs/DESKTOP_GUIDE.md).
 The corresponding `generate` command reuses the saved preview and rejects changed
 conditions. Real generation still requires reviewed engine/assets and a consented
-recording. See [tokenizer setup](docs/TOKENIZER_SETUP.md) for the separately pinned
-tokenizer environment; inference setup and its full dependency lock remain open.
+recording. Full inference setup uses the tokenizer packaged with the fixed TTS
+model for both preview and generation. [Tokenizer-only setup](docs/TOKENIZER_SETUP.md)
+is an additional preview option. The inference asset, source and wheel locks
+are under `config/inference-*.lock.json`.
 
 The source contracts are documented in `docs/FEATURE_CONTRACTS.md`; the
 application flow and explicit silence-only demo are documented in

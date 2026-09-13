@@ -15,7 +15,9 @@
     "public_distribution": false
   },
   "policy": {
-    "allowed_audiences": ["INTERNAL_SOURCE_REVIEW"],
+    "allowed_audiences": [
+      "INTERNAL_SOURCE_REVIEW"
+    ],
     "public_bundle_requires_approval": true,
     "source_only": true
   },
@@ -47,19 +49,19 @@
       "component_id": "irodori-tts-compatibility",
       "display_name": "Irodori-TTS compatible engine boundary",
       "kind": "vendor-source-and-runtime",
-      "source_url": null,
-      "wheel_url": null,
-      "source_commit_or_version": null,
-      "sha256": null,
-      "license_spdx": "NOASSERTION",
-      "license_status": "NOT_APPROVED",
+      "source_url": "https://codeload.github.com/Aratako/Irodori-TTS/zip/8ca3acb58ab4e19ad6d594aaed6bafe3e88f7f71",
+      "wheel_url": "https://codeload.github.com/Aratako/Irodori-TTS/zip/8ca3acb58ab4e19ad6d594aaed6bafe3e88f7f71",
+      "source_commit_or_version": "0.1.0+ntts.8ca3acb58ab4",
+      "sha256": "f5fccadc766bfee753cbb18f651cc36ec5ee30246c5bd9c2a8844c495c12b54a",
+      "license_spdx": "MIT",
+      "license_status": "OFFICIAL_FIXED_SOURCE_REVIEWED",
       "redistribution_status": "NOT_APPROVED",
-      "notice_required": null,
-      "notice_status": "UNKNOWN_PENDING_EXACT_LICENSE",
+      "notice_required": true,
+      "notice_status": "SEE_INFERENCE_COMPONENTS_AND_ORIGINAL_LICENSE",
       "approval_status": "NOT_APPROVED",
       "approval_authority": null,
       "bundle": false,
-      "bundle_reason": "Compatibility boundary only; no source or runtime payload is bundled."
+      "bundle_reason": "Separately acquired for local execution under docs/INFERENCE_COMPONENTS.md; redistribution of the runtime or weights is outside this source-layout distribution."
     },
     {
       "component_id": "silentcipher-checkpoint",
@@ -101,19 +103,19 @@
       "component_id": "semantic-dacvae-codec",
       "display_name": "semantic-dacvae-japanese-32dim codec weights",
       "kind": "codec-weights",
-      "source_url": null,
-      "wheel_url": null,
-      "source_commit_or_version": null,
-      "sha256": null,
-      "license_spdx": "NOASSERTION",
-      "license_status": "NOT_APPROVED",
+      "source_url": "https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim",
+      "wheel_url": "https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim/resolve/47376ee24834d7a05a48ebabfe3cde29b3c5e214/weights.pth",
+      "source_commit_or_version": "47376ee24834d7a05a48ebabfe3cde29b3c5e214",
+      "sha256": "db120339c5ee7eca1912cdf29bc612b947a0808e69c3cebfb4936b45a762c1d5",
+      "license_spdx": "MIT",
+      "license_status": "OFFICIAL_FIXED_SOURCE_REVIEWED",
       "redistribution_status": "NOT_APPROVED",
-      "notice_required": null,
-      "notice_status": "UNKNOWN_PENDING_EXACT_LICENSE",
+      "notice_required": true,
+      "notice_status": "SEE_INFERENCE_COMPONENTS_AND_ORIGINAL_LICENSE",
       "approval_status": "NOT_APPROVED",
       "approval_authority": null,
       "bundle": false,
-      "bundle_reason": "Codec payload is explicitly excluded from this source-only lane."
+      "bundle_reason": "Separately acquired for local execution under docs/INFERENCE_COMPONENTS.md; redistribution of the runtime or weights is outside this source-layout distribution."
     },
     {
       "component_id": "sounddevice",

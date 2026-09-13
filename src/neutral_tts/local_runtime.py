@@ -123,6 +123,7 @@ def _local_execution():
         "HF_HUB_DISABLE_TELEMETRY": "1", "DO_NOT_TRACK": "1",
         "TORCH_FORCE_WEIGHTS_ONLY_LOAD": "1",
         "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD": "0",
+        "TORCHDYNAMO_DISABLE": "1",
     }
     before = {key: os.environ.get(key) for key in values}
     disabled = logging.root.manager.disable
@@ -170,25 +171,40 @@ class _ReferenceLease:
 
 class _InstalledAdapter:
     def create_runtime(self, config):
+        self.watermark_kind = config.watermark_kind
+        self.references = config.references
         self.execution = _local_execution()
         self.execution.__enter__()
+        self.assets_lease = ExitStack()
         try:
+            if config.watermark_kind == "audioseal-16bit-cpu":
+                from .asset_lease import AssetLease
+                self.assets_lease.enter_context(AssetLease(config.assets))
             config.verify()
             self.module = importlib.import_module("irodori_tts.inference_runtime")
-            silentcipher = importlib.import_module("silentcipher")
             original = self.module.SilentCipherWatermarker
-
-            def local_watermark(*, device, model_type):
-                config.verify_role("watermark")
-                return silentcipher.get_model(
-                    model_type=model_type, device=device,
-                    ckpt_path=str(config.watermark),
-                    config_path=str(config.watermark / "hparams.yaml"),
+            if config.watermark_kind == "audioseal-16bit-cpu":
+                from .audioseal_runtime import AudioSealWatermarker
+                def local_watermark(*, device):
+                    if str(device) != config.device:
+                        raise LocalRuntimeError("The engine device changed during watermark setup.")
+                    config.verify_role("watermark")
+                    # This explicitly selected alternative runs its watermark
+                    # stage on CPU, independent of the TTS/codec device.
+                    return AudioSealWatermarker(config.watermark)
+                self.module.SilentCipherWatermarker = local_watermark
+            else:
+                silentcipher = importlib.import_module("silentcipher")
+                def local_watermark(*, device, model_type):
+                    config.verify_role("watermark")
+                    return silentcipher.get_model(
+                        model_type=model_type, device=device,
+                        ckpt_path=str(config.watermark),
+                        config_path=str(config.watermark / "hparams.yaml"),
+                    )
+                self.module.SilentCipherWatermarker = type(
+                    "LocalWatermarker", (original,), {"_load_backend": staticmethod(local_watermark)}
                 )
-
-            self.module.SilentCipherWatermarker = type(
-                "LocalWatermarker", (original,), {"_load_backend": staticmethod(local_watermark)}
-            )
             try:
                 key = self.module.RuntimeKey(
                     checkpoint=str(config.model), codec_repo=str(config.codec),
@@ -197,10 +213,15 @@ class _InstalledAdapter:
                     codec_deterministic_encode=True, codec_deterministic_decode=True,
                     compile_model=False, compile_dynamic=False,
                 )
+                if config.watermark_kind == "audioseal-16bit-cpu":
+                    from .restricted_engine import codec_loader
+                    with codec_loader(config):
+                        return self.module.InferenceRuntime.from_key(key)
                 return self.module.InferenceRuntime.from_key(key)
             finally:
                 self.module.SilentCipherWatermarker = original
         except BaseException:
+            self.assets_lease.close()
             self.execution.__exit__(None, None, None)
             raise
 
@@ -220,12 +241,19 @@ class _InstalledAdapter:
         reference_lease.verify()
         values = vars(request).copy()
         values["ref_wavs"] = [str(path) for path in values.pop("reference_paths")]
+        # The PCM reader is applied in the dedicated process only. It consumes
+        # the exact bytes admitted by the lease and cannot fall back to codecs.
+        if self.watermark_kind == "audioseal-16bit-cpu":
+            from .restricted_engine import reference_reader
+            with reference_reader(self.module, self.references):
+                return runtime.synthesize(self.module.SamplingRequest(**values), log_fn=None)
         return runtime.synthesize(self.module.SamplingRequest(**values), log_fn=None)
 
     def close_runtime(self, runtime):
         try:
             runtime.unload()
         finally:
+            self.assets_lease.close()
             self.execution.__exit__(None, None, None)
 
 
@@ -238,7 +266,14 @@ class LocalRuntimeConfig:
         required = {"schema_version", "asset_root", "assets", "model", "codec",
                     "tokenizer", "watermark", "device", "precision", "vocab_size",
                     "bos_token_id", "rights_manifest", "rights_manifest_sha256", "references"}
-        if set(data) != required or data["schema_version"] != SCHEMA:
+        schema = data.get("schema_version")
+        self.watermark_kind = "silentcipher"
+        if schema == "neutral-local-runtime-v2":
+            required.add("watermark_kind")
+            self.watermark_kind = data.get("watermark_kind")
+            if self.watermark_kind != "audioseal-16bit-cpu":
+                raise LocalRuntimeError("The selected alternative watermark is unsupported.")
+        if set(data) != required or schema not in {SCHEMA, "neutral-local-runtime-v2"}:
             raise LocalRuntimeError("The local runtime configuration schema is unsupported.")
         self.root = _absolute(data["asset_root"])
         self.device, self.precision = data["device"], data["precision"]
@@ -273,9 +308,12 @@ class LocalRuntimeConfig:
         if self.tokenizer != self.model.parent / "tokenizer":
             raise LocalRuntimeError("Tokenizer assets must be beside the selected checkpoint.")
         selected = {self.model: "model", self.codec: "codec"}
+        watermark_files = (("generator_base.safetensors", "detector_base.safetensors")
+                           if self.watermark_kind == "audioseal-16bit-cpu" else
+                           ("hparams.yaml", "enc_c.ckpt", "dec_c.ckpt", "dec_m_0.ckpt"))
         for directory, names, role in (
             (self.tokenizer, ("tokenizer.json", "tokenizer_config.json"), "tokenizer"),
-            (self.watermark, ("hparams.yaml", "enc_c.ckpt", "dec_c.ckpt", "dec_m_0.ckpt"), "watermark"),
+            (self.watermark, watermark_files, "watermark"),
         ):
             if not directory.is_dir():
                 raise LocalRuntimeError("A selected asset directory is unavailable.")

@@ -14,6 +14,15 @@ from .workbench import Workbench, WorkbenchError
 def dispatch(request):
     if type(request) is not dict or set(request) != {"operation", "data_root", "arguments"}:
         raise WorkbenchError("The operation request is invalid.")
+    if type(request["arguments"]) is not dict:
+        raise WorkbenchError("Operation arguments must be an object.")
+    if request["operation"] == "setup_inference":
+        from .inference_setup import provision_inference
+        return provision_inference(request["data_root"], **request["arguments"])
+    if request["operation"] in {"prepare_references", "current_references"}:
+        from .reference_setup import prepare_references, current_references
+        operation = prepare_references if request["operation"] == "prepare_references" else current_references
+        return operation(request["data_root"], **request["arguments"])
     if request["operation"] == "setup_tokenizer":
         from .setup import acquire_tokenizer
         return acquire_tokenizer(request["data_root"], **request["arguments"])
@@ -26,7 +35,7 @@ def dispatch(request):
             raise WorkbenchError("Environment check does not accept options.")
         return environment()
     workbench = Workbench(Path(request["data_root"]))
-    allowed = {"configure", "startup", "preview", "generate", "play", "backup", "restore", "lifecycle"}
+    allowed = {"configure", "startup", "preview", "generate", "play", "detect_watermark", "backup", "restore", "lifecycle"}
     if request["operation"] not in allowed or type(request["arguments"]) is not dict:
         raise WorkbenchError("The operation is unsupported.")
     value = getattr(workbench, request["operation"])(**request["arguments"])
@@ -41,8 +50,10 @@ def main():
         value = dispatch(json.loads(raw))
         result = {"status": "ok", "result": value}
     except Exception as error:
+        from .inference_setup import SetupDownloadError
         code = ("PREVIEW_CHANGED" if isinstance(error, StalePreviewError) else
-                "BUSY" if isinstance(error, BackupRestoreBusy) else "REQUEST_REJECTED")
+                "BUSY" if isinstance(error, BackupRestoreBusy) else
+                "SETUP_DOWNLOAD" if isinstance(error, SetupDownloadError) else "REQUEST_REJECTED")
         # Exception messages from engines and operating systems may include
         # private text/paths. Show a stable action guide instead.
         result = {"status": "error", "code": code}

@@ -43,7 +43,7 @@ class WorkerProcess:
                 if self.cancelled:
                     raise RuntimeError("Cancelled before process creation.")
                 self.process = subprocess.Popen(
-                    [sys.executable if operation == "setup_environment" else self.python, "-I", "-B", "-c", bootstrap, source],
+                    [sys.executable if operation in {"setup_environment", "setup_inference"} else self.python, "-I", "-B", "-c", bootstrap, source],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                     env=environment, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 process = self.process
@@ -91,6 +91,7 @@ class Desktop:
                     python = None
         self.worker = WorkerProcess(data_root, python=python)
         self.controls = []
+        self.current_operation = None
         self.history_ids = []
         self.history_paths = []
         self.preview_ready = False
@@ -101,7 +102,7 @@ class Desktop:
         outer = ttk.Frame(window, padding=14)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text=DISPLAY_NAME, font=("Segoe UI", 18, "bold")).pack(anchor="w")
-        ttk.Label(outer, text="ローカル候補・未署名  |  実音声の品質・新規Windowsでの動作は未確認").pack(anchor="w", pady=(4, 8))
+        ttk.Label(outer, text="未署名のWindows配布候補  |  音声は選択した保存先へ保存します").pack(anchor="w", pady=(4, 8))
         self.tabs = ttk.Notebook(outer)
         self.tabs.pack(fill="both", expand=True)
         generate = ttk.Frame(self.tabs, padding=10)
@@ -137,6 +138,11 @@ class Desktop:
         self._button(row, "導入前の環境確認", lambda: self._start("environment", {})).pack(side="left")
         self._button(row, "確認済みトークナイザーを取得（約8.6 MB）", self._setup_tokenizer).pack(side="left", padx=8)
         self._button(setup, "専用Python環境を作成・修復（Windows/Python 3.13）", self._setup_environment).pack(anchor="w", pady=3)
+        row = ttk.Frame(setup)
+        row.pack(fill="x", pady=3)
+        self._button(row, "参照音声と利用範囲を登録", self._reference_setup).pack(side="left")
+        self._button(row, "登録済み参照を検査・表示", lambda: self._start("current_references", {})).pack(side="left", padx=8)
+        self._button(setup, "実生成の初回セットアップ（モデル・CUDA・AudioSeal）", self._setup_inference).pack(anchor="w", pady=3)
         defaults = {"output_directory": str(Path(data_root).parent / "neutral-tts-output"),
                     "tokenizer_config": "", "runtime_config": "", "title": "audio",
                     "template": DEFAULT_TEMPLATE, "pause_seconds": "0"}
@@ -166,6 +172,7 @@ class Desktop:
         self.history.bind("<<ListboxSelect>>", self._history_selected)
         ttk.Label(history, textvariable=self.history_destination, wraplength=850).pack(anchor="w", pady=6)
         self._button(history, "選択したWAVを検査して再生", self._play).pack(anchor="e", pady=8)
+        self._button(history, "保存WAVのAudioSeal透かしを検査", self._detect_watermark).pack(anchor="e")
         ttk.Label(maintenance, text="バックアップ：設定・辞書・検証済み履歴。出力WAV・外部資産は別途保管してください。\n復元は現在の設定・辞書・履歴を置換します。復元前の安全バックアップを自動作成します。", wraplength=850).pack(anchor="w", pady=8)
         self._button(maintenance, "バックアップを保存", self._backup).pack(anchor="w", pady=5)
         self._button(maintenance, "バックアップから復元", self._restore).pack(anchor="w", pady=5)
@@ -209,6 +216,7 @@ class Desktop:
     def _start(self, operation, arguments):
         if self.worker.busy:
             return
+        self.current_operation = operation
         self.worker.start(operation, arguments)
         for widget in self.controls:
             widget.configure(state="disabled")
@@ -219,6 +227,14 @@ class Desktop:
         self.status.set({"generate": "生成中…中断後は回復処理を行います。", "preview": "トークナイザーで計画を確認中…"}.get(operation, "処理中…"))
 
     def _poll(self):
+        if self.worker.busy and self.current_operation == "setup_inference":
+            try:
+                from .inference_setup import read_progress
+                progress = read_progress(Path(self.worker.data_root) / "setup-progress.json")
+                label = {"sources": "固定ソースを取得・構築", "wheels": "Python依存を取得・照合", "install": "専用環境へ導入", "assets": "モデル資産を取得・照合", "configure": "参照と権利資料を設定", "complete": "設定完了"}[progress["phase"]]
+                self.status.set(f"{label}：{progress['completed']}/{progress['total']}　中断後は同じフォルダーで再開できます。")
+            except Exception:
+                pass
         try:
             operation, payload = self.worker.events.get_nowait()
         except queue.Empty:
@@ -236,7 +252,8 @@ class Desktop:
                 self._start("startup", {})
             elif payload["status"] == "error":
                 self._invalidate()
-                guides = {"PREVIEW_CHANGED": "条件が変わりました。設定を保存し、再プレビューしてください。", "BUSY": "同じデータを別の処理が使用中です。終了後に再実行してください。"}
+                guides = {"PREVIEW_CHANGED": "条件が変わりました。設定を保存し、再プレビューしてください。", "BUSY": "同じデータを別の処理が使用中です。終了後に再実行してください。",
+                          "SETUP_DOWNLOAD": "公式ファイルを取得できませんでした。通信を確認し、初回セットアップで同じ導入先を選んで再実行してください。検査済みファイルは再利用します。"}
                 self.status.set(guides.get(payload.get("code"), "処理を完了できません。設定の選択ファイル・容量・権利資料を確認し、回復・履歴の再検査から再実行してください。"))
             else:
                 result = payload["result"]
@@ -268,19 +285,43 @@ class Desktop:
                     p = result["preview"]
                     counts = p["plan"]
                     ranges = p["display_ranges"]
+                    estimate = p["estimate"]
+                    timing = estimate["generation_seconds"]
+                    import math
+                    time_text = "未計測" if timing is None else f"約{math.floor(timing['minimum'])}～{math.ceil(timing['maximum'])}秒（生成処理）"
+                    samples = estimate["confidence"]["sample_count"]
+                    note = ("同じ実行環境の成功記録がありません。音声長・所要時間は未校正です。" if not samples else
+                            f"同じ環境・資産の成功{samples}件を使用。{'少数標本の参考範囲です。' if samples < 5 else '実測からの参考範囲です。'}事前検証・負荷による待ち時間は別です。")
                     self.preview_text.set(("合成テスト：無音です。\n" if result["demo"] else "実トークナイザーによる計画\n") +
                         f"入力 {counts['source_characters']}文字 / 読み変換後 {counts['synthesis_characters']}文字 / {counts['total_tokens']}トークン / {counts['chunk_count']}チャンク\n" +
-                        f"生成時間：未計測　保存容量の安全上限：{ranges['storage_mib']['maximum']} MiB　作業容量の安全上限：{ranges['staging_mib']['maximum']} MiB\n" +
-                        "音声長・所要時間の見積りは実生成での校正前です。")
+                        f"生成時間：{time_text}　保存容量の目安上限：{ranges['storage_mib']['maximum']} MiB　作業容量の目安上限：{ranges['staging_mib']['maximum']} MiB\n" + note)
                 elif operation == "setup_tokenizer":
                     self.settings["tokenizer_config"].set(result["tokenizer_config"])
                     self.status.set("固定版の取得・ハッシュ検証が完了しました。「設定・辞書を保存」を押してください。")
                 elif operation == "setup_environment":
                     self.worker.python = result["worker_python"]
                     self.status.set("専用Python環境を作成しました。次にトークナイザーを取得し、設定を保存してください。")
+                elif operation == "setup_inference":
+                    self.worker.python = result["worker_python"]
+                    self.settings["tokenizer_config"].set(result["tokenizer_config"])
+                    self.settings["runtime_config"].set(result["runtime_config"])
+                    self._invalidate()
+                    self.status.set("モデル・依存・透かしの設定が完了しました。保存先を確認して「設定・辞書を保存」を押し、プレビューへ進んでください。")
+                elif operation in {"prepare_references", "current_references"}:
+                    self._invalidate()
+                    from tkinter import messagebox
+                    if result.get("configured") is False:
+                        self.status.set("参照音声は未登録です。「参照音声と利用範囲を登録」から選択してください。")
+                    else:
+                        lines = [f"{r['frames'] / r['sample_rate']:.2f}秒 / {r['sample_rate']} Hz\n{r['path']}" for r in result["references"]]
+                        messagebox.showinfo("非公開の参照音声", "\n\n".join(lines) + "\n\n生成音声の利用範囲：\n" + result["permissions"]["generated_audio_use"] + "\n\n参照の登録が完了しました。実生成には確認済みの推論環境・資産設定が別途必要です。", parent=self.window)
+                        self.status.set("参照音声と許可範囲を保存・検査しました。推論資産の審査完了とは別です。")
                 elif operation == "environment":
                     from tkinter import messagebox
                     messagebox.showinfo("環境確認", json.dumps(result, ensure_ascii=False, indent=2) + "\n実TTSのGPU・VRAM要件は未検証です。", parent=self.window)
+                elif operation == "detect_watermark":
+                    from tkinter import messagebox
+                    messagebox.showinfo("保存WAVのAudioSeal検査", f"透かし検出のフレーム割合：{result['watermarked_frame_fraction']:.3f}\n埋め込んだ値の一致：{result['payload_matches']}\n音声長：{result['seconds']:.2f}秒　ピーク：{result['peak']:.3f}\nクリッピング：{result['clipped_samples']}サンプル\nSHA-256：{result['sha256']}\n\n検出は本人性・同意・作成元を証明しません。誤検出や改変による未検出があり得ます。", parent=self.window)
                 elif operation == "generate":
                     self.destination.set(result["destination"])
                     self._invalidate()
@@ -328,6 +369,14 @@ class Desktop:
         if selected:
             self._start("setup_environment", {"environment_directory": selected})
 
+    def _reference_setup(self):
+        from .reference_dialog import ReferenceDialog
+        ReferenceDialog(self)
+
+    def _setup_inference(self):
+        from .inference_dialog import InferenceDialog
+        InferenceDialog(self)
+
     def _save(self):
         rules = []
         for line in self.dictionary.get("1.0", "end-1c").splitlines():
@@ -364,6 +413,11 @@ class Desktop:
         selection = self.history.curselection()
         if selection:
             self.history_destination.set(self.history_paths[selection[0]])
+
+    def _detect_watermark(self):
+        selection = self.history.curselection()
+        if selection:
+            self._start("detect_watermark", {"run_id": self.history_ids[selection[0]]})
 
     def _backup(self):
         from tkinter import filedialog

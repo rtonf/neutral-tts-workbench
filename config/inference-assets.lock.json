@@ -1,0 +1,59 @@
+{
+  "schema_version": "neutral-inference-assets-v1",
+  "assets": [
+    {
+      "path": "model.safetensors",
+      "role": "model",
+      "size": 3064295596,
+      "sha256": "5863c986345d9f6d20b7d8748fee1af02079c5161cf0c9e52557da0a0c378593",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4-Small/resolve/4c92c7ee2bb15c19a97cf4e86d24fd6bf33b0135/model.safetensors",
+      "source": "https://huggingface.co/Aratako/Irodori-TTS-v4-Small",
+      "revision": "4c92c7ee2bb15c19a97cf4e86d24fd6bf33b0135"
+    },
+    {
+      "path": "tokenizer/tokenizer.json",
+      "role": "tokenizer",
+      "size": 6718495,
+      "sha256": "6a0734cf21c802169defaffe719bc2ef12bb9d0be37e54b61ed27aa89394723d",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4-Small/resolve/4c92c7ee2bb15c19a97cf4e86d24fd6bf33b0135/tokenizer/tokenizer.json",
+      "source": "https://huggingface.co/Aratako/Irodori-TTS-v4-Small",
+      "revision": "4c92c7ee2bb15c19a97cf4e86d24fd6bf33b0135"
+    },
+    {
+      "path": "tokenizer/tokenizer_config.json",
+      "role": "tokenizer",
+      "size": 668,
+      "sha256": "d229a271c64de1a7939d20d3665498e873fa91d5ee2edf135d73ec752cb9c9d3",
+      "url": "https://huggingface.co/Aratako/Irodori-TTS-v4-Small/resolve/4c92c7ee2bb15c19a97cf4e86d24fd6bf33b0135/tokenizer/tokenizer_config.json",
+      "source": "https://huggingface.co/Aratako/Irodori-TTS-v4-Small",
+      "revision": "4c92c7ee2bb15c19a97cf4e86d24fd6bf33b0135"
+    },
+    {
+      "path": "codec/weights.pth",
+      "role": "codec",
+      "size": 429620065,
+      "sha256": "db120339c5ee7eca1912cdf29bc612b947a0808e69c3cebfb4936b45a762c1d5",
+      "url": "https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim/resolve/47376ee24834d7a05a48ebabfe3cde29b3c5e214/weights.pth",
+      "source": "https://huggingface.co/Aratako/Semantic-DACVAE-Japanese-32dim",
+      "revision": "47376ee24834d7a05a48ebabfe3cde29b3c5e214"
+    },
+    {
+      "path": "audioseal/detector_base.pth",
+      "role": "watermark_source",
+      "size": 34667641,
+      "sha256": "8a78e8a83584113523e161fc599fcab10fd0e94c04d2eb9d2fa1e9ec91ab69d9",
+      "url": "https://huggingface.co/facebook/audioseal/resolve/3c19eba53390776cf2cc9ed5f6c9ac67ce72ecba/detector_base.pth",
+      "source": "https://huggingface.co/facebook/audioseal",
+      "revision": "3c19eba53390776cf2cc9ed5f6c9ac67ce72ecba"
+    },
+    {
+      "path": "audioseal/generator_base.pth",
+      "role": "watermark_source",
+      "size": 58805980,
+      "sha256": "7a845b5fbe9364a63a3909d8ab3fe064d13a76ae4c2e983573e08c69b7b51748",
+      "url": "https://huggingface.co/facebook/audioseal/resolve/3c19eba53390776cf2cc9ed5f6c9ac67ce72ecba/generator_base.pth",
+      "source": "https://huggingface.co/facebook/audioseal",
+      "revision": "3c19eba53390776cf2cc9ed5f6c9ac67ce72ecba"
+    }
+  ]
+}

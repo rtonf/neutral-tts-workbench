@@ -29,6 +29,12 @@
   "disclosure_paths": [
     "README.md",
     "src/neutral_tts/local_runtime.py",
+    "src/neutral_tts/inference_dialog.py",
+    "src/neutral_tts/audioseal_runtime.py",
+    "docs/INFERENCE_COMPONENTS.md",
+    "config/inference-assets.lock.json",
+    "config/inference-sources.lock.json",
+    "config/inference-inventory.json",
     "src/neutral_tts/setup.py",
     "docs/TOKENIZER_SETUP.md",
     "tests/test_local_runtime.py",

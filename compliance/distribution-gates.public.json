@@ -61,9 +61,9 @@
     },
     {
       "gate_id": "signing",
-      "status": "UNSIGNED",
+      "status": "OUT_OF_SCOPE_UNSIGNED_RELEASE",
       "payload_present": false,
-      "required_evidence": ["signature_target_hash", "approved_algorithm", "certificate_identity", "timestamp_evidence", "signature_verification", "authority_approval"],
+      "required_evidence": ["unsigned_specification:docs/UNSIGNED_DISTRIBUTION.md", "artifact_sha256", "download_verification_instructions", "observed_windows_warnings"],
       "approval_authority": null,
       "approval_record": null
     }

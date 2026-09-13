@@ -102,6 +102,38 @@ class WorkbenchTests(unittest.TestCase):
                 with self.assertRaises(StalePreviewError):
                     workbench.generate(text, demo=True)
 
+    def test_only_verified_matching_runtime_receipts_calibrate_real_preview(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            token, runtime = self.tokenizer_fixture(root)
+            workbench, values = self.configure(root)
+            values.update(tokenizer_config=str(token), runtime_config=str(runtime))
+            workbench.configure(values, [])
+            events = []
+            imports = runtime_tests.LocalRuntimeTests().fake_packages(events)
+            with patch("neutral_tts.environment_binding.environment_digest", return_value="a" * 64) as environment, patch("importlib.import_module", side_effect=imports):
+                first = workbench.preview("synthetic source")
+                self.assertEqual(first["preview"]["estimate"]["confidence"]["sample_count"], 0)
+                workbench.generate("synthetic source")
+                events.clear()
+                second = workbench.preview("synthetic source")
+                self.assertEqual({kind for kind, _ in events}, {"tokenizer"})
+                estimate = second["preview"]["estimate"]
+                self.assertEqual(estimate["confidence"]["sample_count"], 1)
+                self.assertEqual(estimate["confidence"]["state"], "low_sample")
+                self.assertIsNotNone(estimate["generation_seconds"])
+                environment.return_value = "b" * 64
+                with self.assertRaises(StalePreviewError):
+                    workbench.generate("synthetic source")
+                changed = workbench.preview("synthetic source")
+                self.assertEqual(changed["preview"]["estimate"]["confidence"]["sample_count"], 0)
+                environment.return_value = "a" * 64
+                records = workbench.startup()["history"]
+                wav = root / "wav" / records[0]["output"]["wav_name"]
+                wav.write_bytes(b"changed synthetic wave")
+                changed = workbench.preview("synthetic source")
+                self.assertEqual(changed["preview"]["estimate"]["confidence"]["sample_count"], 0)
+
     def test_worker_process_roundtrip_environment_isolation_and_duplicate_rejection(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
