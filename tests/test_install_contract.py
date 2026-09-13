@@ -79,7 +79,8 @@ class InstallContractTests(unittest.TestCase):
 
     def make_junction(self, link: Path, target: Path) -> None:
         if os.name != "nt":
-            self.skipTest("junction probe is Windows-specific")
+            link.symlink_to(target, target_is_directory=True)
+            return
         result = subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(link), str(target)],
             stdout=subprocess.DEVNULL,

@@ -1,4 +1,15 @@
-# 0.1.0rc1 — unsigned Windows release candidate
+# 0.1.0rc2 — unsigned Windows release candidate
+
+0.1.0rc1の公開後、GitHub Actionsで公開ソースの検査構成の不備を確認しました。この版はその修正です。
+参照音声・生成・保存・復旧のアプリ実行コードと固定モデル/依存物は0.1.0rc1と同一です。
+
+- 開発者の非公開設定に依存していた配布検査テストを、一時フォルダーに作るテスト専用ポリシーへ変更しました。検査対象へ禁止マーカーを入れると配布を拒否する試験も追加しています。
+- CIではリンクを解決したPython実体から試験を実行します。アプリ側のリンク拒否・ファイル差替え検査は変更していません。
+- ディレクトリー差替えの試験は、Windowsでjunction、Linuxでsymlinkを使用します。故障注入中のskipが通常エラーとして処理される問題を解消します。
+- Git公開面検査に対象commitと履歴を明示し、checkoutで全履歴を取得します。両OSの結果を残すため、片方の失敗による他方の自動取消しを止めました。
+
+Windowsでの関連38試験は失敗・エラー・skipなし。GitHubのWindows/Ubuntu検査が両方成功することを、この修正版のRelease公開条件とします。
+過去の実音声・試聴・権限依存試験の結果と、今回のCI修正の検証結果は区別します。
 
 生成前に[権利・同意・利用者の責任](VOICE_USE.md)を確認してください。
 録音・実演・文章等の権利、話者の声の複製への明示同意、公開・商用・第三者提供等の用途を区別します。
@@ -61,7 +72,7 @@ the agreed current-host acceptance scope. The desktop retains at most 128
 completed history records per data folder. Input is limited to 4096 characters,
 dictionary expansion to 16384, and boundary pauses to 10 seconds.
 
-The candidate version is `0.1.0rc1`; its release tag is `v0.1.0-rc.1`.
+The candidate version is `0.1.0rc2`; its release tag is `v0.1.0-rc.2`.
 The Release identifies the exact approved commit and artifact hashes. The
 preparation-stage acceptance record remains separate from publication approval
 and actual GitHub clone/download verification.

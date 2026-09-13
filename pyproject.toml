@@ -1,6 +1,6 @@
 [project]
 name = "neutral-tts-workbench"
-version = "0.1.0rc1"
+version = "0.1.0rc2"
 description = "Local TTS desktop with guided setup, exact preview, and protected WAV storage"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
 import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -20,7 +21,6 @@ from tools.verify_source_archive import SourceArchiveVerificationError, main as 
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PRIVATE_POLICY = ROOT / ".private-compliance" / "public-scan-policy.json"
 AUDIENCE = "INTERNAL_SOURCE_REVIEW"
 
 
@@ -33,6 +33,9 @@ class SupplyChainTests(unittest.TestCase):
         # a deliberately incomplete exact-commit fixture.
         cls.fixture_tmp = tempfile.TemporaryDirectory()
         cls.fixture = Path(cls.fixture_tmp.name) / "candidate"
+        cls.private_policy = Path(cls.fixture_tmp.name) / "scan-policy.json"
+        cls.policy_marker = "fixture-" + uuid.uuid4().hex
+        cls.private_policy.write_text(json.dumps({"private_literals": [cls.policy_marker]}), encoding="utf-8")
         shutil.copytree(ROOT, cls.fixture, ignore=shutil.ignore_patterns(".git", ".private-compliance", ".staging", "__pycache__", ".pytest_cache"))
         subprocess.run(["git", "init", "-b", "main", str(cls.fixture)], check=True, capture_output=True)
         subprocess.run(["git", "-C", str(cls.fixture), "config", "user.name", "Supply Chain Test"], check=True, capture_output=True)
@@ -48,7 +51,7 @@ class SupplyChainTests(unittest.TestCase):
         cls.fixture_tmp.cleanup()
 
     def _build(self, destination: Path) -> None:
-        build_source_archive(self.fixture, self.commit, destination, self.lock, self.allowlist, audience=AUDIENCE, private_policy=PRIVATE_POLICY)
+        build_source_archive(self.fixture, self.commit, destination, self.lock, self.allowlist, audience=AUDIENCE, private_policy=self.private_policy)
 
     def _verify(self, archive: Path) -> dict:
         return verify_source_archive(
@@ -58,7 +61,7 @@ class SupplyChainTests(unittest.TestCase):
             allowlist=self.allowlist,
             expected_commit=self.commit,
             audience=AUDIENCE,
-            private_policy=PRIVATE_POLICY,
+            private_policy=self.private_policy,
         )
 
     def _variant(self, *, remove_lock: bool = False, mismatch_lock: bool = False) -> tuple[Path, str]:
@@ -117,8 +120,8 @@ class SupplyChainTests(unittest.TestCase):
             calls = [
                 (dependency_main, ["--lock", str(self.lock), "--public"]),
                 (metadata_main, ["--root", str(self.fixture), "--commit", self.commit, "--lock", str(self.lock), "--allowlist", str(self.allowlist), "--output-dir", directory]),
-                (build_archive_main, ["--root", str(self.fixture), "--commit", self.commit, "--output", str(private_path), "--lock", str(self.lock), "--allowlist", str(self.allowlist), "--audience", AUDIENCE, "--private-policy", str(PRIVATE_POLICY)]),
-                (verify_archive_main, ["--archive", str(Path(directory) / "missing.zip"), "--root", str(self.fixture), "--lock", str(self.lock), "--allowlist", str(self.allowlist), "--commit", self.commit, "--audience", AUDIENCE, "--private-policy", str(PRIVATE_POLICY)]),
+                (build_archive_main, ["--root", str(self.fixture), "--commit", self.commit, "--output", str(private_path), "--lock", str(self.lock), "--allowlist", str(self.allowlist), "--audience", AUDIENCE, "--private-policy", str(self.private_policy)]),
+                (verify_archive_main, ["--archive", str(Path(directory) / "missing.zip"), "--root", str(self.fixture), "--lock", str(self.lock), "--allowlist", str(self.allowlist), "--commit", self.commit, "--audience", AUDIENCE, "--private-policy", str(self.private_policy)]),
             ]
             for main, argv in calls:
                 output = io.StringIO()
@@ -185,14 +188,28 @@ class SupplyChainTests(unittest.TestCase):
             output = Path(directory) / "candidate.zip"
             output.write_bytes(b"sentinel")
             with self.assertRaises(SourceArchiveError):
-                build_source_archive(self.fixture, self.commit, output, self.lock, self.allowlist, audience="PUBLIC", private_policy=PRIVATE_POLICY)
+                build_source_archive(self.fixture, self.commit, output, self.lock, self.allowlist, audience="PUBLIC", private_policy=self.private_policy)
             self.assertEqual(output.read_bytes(), b"sentinel")
             review = Path(directory) / "review.zip"
             self._build(review)
             with self.assertRaises(SourceArchiveVerificationError):
-                verify_source_archive(review, repo_root=self.fixture, lock=self.lock, allowlist=self.allowlist, expected_commit=self.commit, audience="PUBLIC", private_policy=PRIVATE_POLICY)
+                verify_source_archive(review, repo_root=self.fixture, lock=self.lock, allowlist=self.allowlist, expected_commit=self.commit, audience="PUBLIC", private_policy=self.private_policy)
             with self.assertRaises(SourceArchiveVerificationError):
-                verify_source_archive(review, repo_root=self.fixture, lock=self.lock, allowlist=self.allowlist, expected_commit=self.commit, private_policy=PRIVATE_POLICY)
+                verify_source_archive(review, repo_root=self.fixture, lock=self.lock, allowlist=self.allowlist, expected_commit=self.commit, private_policy=self.private_policy)
+
+    def test_archive_scan_enforces_the_supplied_fixture_policy(self) -> None:
+        variant, _ = self._variant()
+        with (variant / "README.md").open("a", encoding="utf-8") as stream:
+            stream.write("\n" + self.policy_marker + "\n")
+        subprocess.run(["git", "-C", str(variant), "add", "README.md"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(variant), "commit", "-m", "policy rejection fixture"], check=True, capture_output=True)
+        commit = subprocess.check_output(["git", "-C", str(variant), "rev-parse", "HEAD"], text=True).strip()
+        output = Path(self.fixture_tmp.name) / "rejected.zip"
+        with self.assertRaises(SourceArchiveError):
+            build_source_archive(variant, commit, output, variant / "config/dependency-closure.lock.json",
+                                 variant / "compliance/source-asset-allowlist.json", audience=AUDIENCE,
+                                 private_policy=self.private_policy)
+        self.assertFalse(output.exists())
 
     def test_verifier_rejects_extra_nested_and_tampered_members(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -233,10 +250,10 @@ class SupplyChainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             missing_root, missing_commit = self._variant(remove_lock=True)
             with self.assertRaises(SourceArchiveError):
-                build_source_archive(missing_root, missing_commit, Path(directory) / "missing.zip", self.lock, missing_root / "compliance" / "source-asset-allowlist.json", audience="INTERNAL_SOURCE_REVIEW", private_policy=PRIVATE_POLICY)
+                build_source_archive(missing_root, missing_commit, Path(directory) / "missing.zip", self.lock, missing_root / "compliance" / "source-asset-allowlist.json", audience="INTERNAL_SOURCE_REVIEW", private_policy=self.private_policy)
             mismatch_root, mismatch_commit = self._variant(mismatch_lock=True)
             with self.assertRaises(SourceArchiveError):
-                build_source_archive(mismatch_root, mismatch_commit, Path(directory) / "mismatch.zip", self.lock, mismatch_root / "compliance" / "source-asset-allowlist.json", audience="INTERNAL_SOURCE_REVIEW", private_policy=PRIVATE_POLICY)
+                build_source_archive(mismatch_root, mismatch_commit, Path(directory) / "mismatch.zip", self.lock, mismatch_root / "compliance" / "source-asset-allowlist.json", audience="INTERNAL_SOURCE_REVIEW", private_policy=self.private_policy)
 
     def test_verifier_rejects_zip_metadata_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -309,9 +326,9 @@ class SupplyChainTests(unittest.TestCase):
             except (OSError, NotImplementedError):
                 self.skipTest("symlink/reparse creation is unavailable")
             with self.assertRaises(Exception):
-                build_source_archive(source_alias, self.commit, base / "source-link-out.zip", self.lock, self.allowlist, audience="INTERNAL_SOURCE_REVIEW", private_policy=PRIVATE_POLICY)
+                build_source_archive(source_alias, self.commit, base / "source-link-out.zip", self.lock, self.allowlist, audience="INTERNAL_SOURCE_REVIEW", private_policy=self.private_policy)
             with self.assertRaises(Exception):
-                build_source_archive(self.fixture, self.commit, parent_alias / "out.zip", self.lock, self.allowlist, audience="INTERNAL_SOURCE_REVIEW", private_policy=PRIVATE_POLICY)
+                build_source_archive(self.fixture, self.commit, parent_alias / "out.zip", self.lock, self.allowlist, audience="INTERNAL_SOURCE_REVIEW", private_policy=self.private_policy)
             with self.assertRaises(SourceArchiveVerificationError):
                 self._verify(archive_alias)
 

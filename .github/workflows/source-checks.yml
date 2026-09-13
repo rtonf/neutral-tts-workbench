@@ -5,23 +5,31 @@ permissions:
 jobs:
   source:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.13'
+      - name: Select the actual Python executable
+        shell: bash
+        run: python -c "import os,pathlib,sys; open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8').write('TEST_PYTHON=' + pathlib.Path(sys.executable).resolve(strict=True).as_posix() + '\n')"
       - name: Standard-library tests
         env:
           PYTHONPATH: src
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python -m unittest discover -s tests -q
+        shell: bash
+        run: '"$TEST_PYTHON" -m unittest discover -s tests -q'
       - name: Public source surface
-        run: python tools/scan_public_surface.py --root . --allowlist compliance/source-asset-allowlist.json --git-only
+        shell: bash
+        run: '"$TEST_PYTHON" tools/scan_public_surface.py --root . --allowlist compliance/source-asset-allowlist.json --git-commit HEAD --git-history --git-only'
       - name: Build local source installer candidate
         shell: bash
         run: |
           mkdir -p .staging
-          python tools/build_windows_candidate.py --commit HEAD --destination .staging/windows-candidate --archive .staging/windows-unsigned.zip
+          "$TEST_PYTHON" tools/build_windows_candidate.py --commit HEAD --destination .staging/windows-candidate --archive .staging/windows-unsigned.zip
