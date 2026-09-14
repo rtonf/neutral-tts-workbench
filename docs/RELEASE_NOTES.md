@@ -1,15 +1,14 @@
-# 0.1.0rc2 — unsigned Windows release candidate
+# 0.1.0rc3 — unsigned Windows release candidate
 
-0.1.0rc1の公開後、GitHub Actionsで公開ソースの検査構成の不備を確認しました。この版はその修正です。
-参照音声・生成・保存・復旧のアプリ実行コードと固定モデル/依存物は0.1.0rc1と同一です。
+0.1.0rc1の公開後のCI不備を修正したrc2は、mainでの検査で追加の問題が判明したため、tagとReleaseを公開していません。rc3はその追加修正版です。
 
-- 開発者の非公開設定に依存していた配布検査テストを、一時フォルダーに作るテスト専用ポリシーへ変更しました。検査対象へ禁止マーカーを入れると配布を拒否する試験も追加しています。
-- CIではリンクを解決したPython実体から試験を実行します。アプリ側のリンク拒否・ファイル差替え検査は変更していません。
-- ディレクトリー差替えの試験は、Windowsでjunction、Linuxでsymlinkを使用します。故障注入中のskipが通常エラーとして処理される問題を解消します。
-- Git公開面検査に対象commitと履歴を明示し、checkoutで全履歴を取得します。両OSの結果を残すため、片方の失敗による他方の自動取消しを止めました。
+- POSIXの進捗表示は、検査済みの親ディレクトリーからリンクを追わず通常ファイルを開き、開いた時点の完全なスナップショットを読みます。正常な原子的更新と同時でも読み取れ、同じ開いたファイル内での変更、非通常ファイル、過大・不正なJSONは拒否します。資産や設定の厳格な読み取り検査は変更していません。
+- Windowsの資産ロックは、短縮名とハンドルが返す正式名を正規化して比較します。同じファイルを名前の表記差だけで拒否する問題を修正しました。既存の書き込みハンドル、ロック中の書き込み・改名、異なる対象は引き続き拒否します。
+- rc2の修正（一時生成の非空テストポリシーと禁止マーカー拒否、Python実体からのCI実行、POSIX symlinkの故障注入、HEADと全履歴の公開面検査、matrixのfail-fast無効化）を引き継いでいます。
 
-Windowsでの関連38試験は失敗・エラー・skipなし。GitHubのWindows/Ubuntu検査が両方成功することを、この修正版のRelease公開条件とします。
-過去の実音声・試聴・権限依存試験の結果と、今回のCI修正の検証結果は区別します。
+Windowsでの追加関連試験は17件中15件が成功、失敗・エラーは0です。POSIX専用の新しい2件はWindowsではskipで、Ubuntuでの実行を必要とします。元の並行読み取り試験は両OSに残しており、失敗ケースをskipへ変更していません。GitHubの同じSHAでWindows/Ubuntuの試験・公開面検査・ビルドが両方成功するまで、この修正版のtag・Releaseを公開しません。
+
+変更は進捗の読み取りと資産ロックのパス比較、および関連試験・説明です。固定モデル・依存カタログ・利用条件、生成・保存・復旧の方式は維持しています。アプリのコード変更は環境識別に反映され、以前の時間見積りの校正値を無条件に再利用しません。過去の実音声・試聴・権限依存試験と、今回の修正の検証結果は区別します。Ubuntuのソース検査はLinux版TTSの製品対応や実機動作の証明ではありません。
 
 生成前に[権利・同意・利用者の責任](VOICE_USE.md)を確認してください。
 録音・実演・文章等の権利、話者の声の複製への明示同意、公開・商用・第三者提供等の用途を区別します。
@@ -72,7 +71,7 @@ the agreed current-host acceptance scope. The desktop retains at most 128
 completed history records per data folder. Input is limited to 4096 characters,
 dictionary expansion to 16384, and boundary pauses to 10 seconds.
 
-The candidate version is `0.1.0rc2`; its release tag is `v0.1.0-rc.2`.
+The candidate version is `0.1.0rc3`; its release tag is `v0.1.0-rc.3`.
 The Release identifies the exact approved commit and artifact hashes. The
 preparation-stage acceptance record remains separate from publication approval
 and actual GitHub clone/download verification.

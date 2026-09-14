@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -66,6 +67,72 @@ class InferenceSetupTests(unittest.TestCase):
             target.write_bytes(b"changed")
             with self.assertRaises(ValueError):
                 _download(target, record, opener=lambda *a, **k: self.fail("Changed existing bytes must not be replaced."))
+
+    def test_progress_rejects_malformed_and_oversized_snapshots(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name) / "setup-progress.json"
+            for raw in (b"", b" " * 4097, b"[]", b"{", b'{"phase":"assets","phase":"complete","completed":1,"total":1}',
+                        b'{"phase":"unknown","completed":0,"total":1}',
+                        b'{"phase":"assets","completed":true,"total":1}',
+                        b'{"phase":"assets","completed":2,"total":1}',
+                        b'{"phase":"assets","completed":1,"total":257}',
+                        b'{"phase":"assets","completed":1,"total":1,"extra":0}'):
+                with self.subTest(raw=raw[:80]):
+                    path.write_bytes(raw)
+                    with self.assertRaises((ValueError, WorkbenchError)):
+                        read_progress(path)
+
+    @unittest.skipIf(os.name == "nt", "POSIX openat snapshot replacement semantics")
+    def test_progress_reads_open_snapshot_during_atomic_replacement(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name) / "setup-progress.json"
+            _write_progress(path, "assets", 1, 2)
+            replacement = path.with_name("next.json")
+            _write_progress(replacement, "complete", 1, 1)
+            original_read = os.read
+            def replace_after_open(fd, size):
+                os.replace(replacement, path)
+                return original_read(fd, size)
+            with patch("neutral_tts.inference_setup.os.read", side_effect=replace_after_open):
+                self.assertEqual(read_progress(path), {"phase": "assets", "completed": 1, "total": 2})
+            self.assertEqual(read_progress(path), {"phase": "complete", "completed": 1, "total": 1})
+
+    @unittest.skipIf(os.name == "nt", "POSIX no-follow descriptor and FIFO semantics")
+    def test_progress_rejects_posix_redirects_nonfiles_and_inplace_changes(self):
+        from neutral_tts.fs_safety import FilesystemBoundaryError
+        with tempfile.TemporaryDirectory() as name:
+            parent = Path(name) / "guarded"
+            parent.mkdir()
+            path = parent / "setup-progress.json"
+            target = Path(name) / "outside.json"
+            _write_progress(target, "assets", 0, 2)
+            path.symlink_to(target)
+            with self.assertRaises(OSError):
+                read_progress(path)
+            path.unlink()
+            os.mkfifo(path)
+            with self.assertRaises(WorkbenchError):
+                read_progress(path)
+            path.unlink()
+            path.mkdir()
+            with self.assertRaises(WorkbenchError):
+                read_progress(path)
+            path.rmdir()
+            _write_progress(path, "assets", 0, 2)
+            original_read = os.read
+            def modify_after_open(fd, size):
+                path.write_bytes(b'{"phase":"complete","completed":1,"total":1}')
+                return original_read(fd, size)
+            with patch("neutral_tts.inference_setup.os.read", side_effect=modify_after_open):
+                with self.assertRaises(WorkbenchError):
+                    read_progress(path)
+            def replace_parent(fd, size):
+                parent.rename(Path(name) / "previous")
+                parent.mkdir()
+                return original_read(fd, size)
+            with patch("neutral_tts.inference_setup.os.read", side_effect=replace_parent):
+                with self.assertRaises(FilesystemBoundaryError):
+                    read_progress(path)
 
     def test_generated_file_failure_never_admits_partial_final_name(self):
         with tempfile.TemporaryDirectory() as name:

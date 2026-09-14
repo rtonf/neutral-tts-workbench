@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import urllib.request
@@ -25,6 +26,37 @@ class SetupDownloadError(WorkbenchError):
     pass
 
 
+def _progress_object(data):
+    if not 0 < len(data) <= 4096:
+        raise WorkbenchError("Setup progress exceeds its size bound.")
+    value = _object(data)
+    if set(value) != {"phase", "completed", "total"} or value["phase"] not in {"sources", "wheels", "install", "assets", "configure", "complete"}:
+        raise WorkbenchError("Setup progress has an invalid shape.")
+    if any(type(value[k]) is not int for k in ("completed", "total")) or not 0 <= value["completed"] <= value["total"] <= 256:
+        raise WorkbenchError("Setup progress has invalid counts.")
+    return value
+
+
+def _read_posix_progress(path):
+    # A replaced leaf may name a newer snapshot while this descriptor still
+    # reads the complete preceding one. Never follow a link or read a device.
+    with DirectoryGuard(path.parent) as guard:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=guard.fd)
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= 4096:
+                raise WorkbenchError("Setup progress has an unsupported size or type.")
+            data = os.read(fd, 4097)
+            after = os.fstat(fd)
+        finally:
+            os.close(fd)
+        identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns)
+        if identity(before) != identity(after) or len(data) != before.st_size:
+            raise WorkbenchError("Setup progress changed within the open snapshot.")
+        guard.assert_unchanged()
+        return _progress_object(data)
+
+
 def read_progress(path):
     """Read advisory progress without blocking the worker's atomic replacement.
 
@@ -37,7 +69,7 @@ def read_progress(path):
     # prevent the writer from replacing the status file.
     path = _absolute(str(path.parent)) / path.name
     if os.name != "nt":
-        return _object(_read(path, limit=4096))
+        return _read_posix_progress(path)
     import ctypes
     import msvcrt
     from ctypes import wintypes
@@ -59,14 +91,7 @@ def read_progress(path):
             raise
         with os.fdopen(fd, "rb") as stream:
             data = stream.read(4097)
-        if not 0 < len(data) <= 4096:
-            raise WorkbenchError("Setup progress exceeds its size bound.")
-        value = _object(data)
-        if set(value) != {"phase", "completed", "total"} or value["phase"] not in {"sources", "wheels", "install", "assets", "configure", "complete"}:
-            raise WorkbenchError("Setup progress has an invalid shape.")
-        if any(type(value[k]) is not int for k in ("completed", "total")) or not 0 <= value["completed"] <= value["total"] <= 256:
-            raise WorkbenchError("Setup progress has invalid counts.")
-        return value
+        return _progress_object(data)
 
 
 def _open_download(url, opener):

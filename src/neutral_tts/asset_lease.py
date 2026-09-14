@@ -35,7 +35,9 @@ class AssetLease:
                 if handle in (None, ctypes.c_void_p(-1).value):
                     raise FilesystemBoundaryError("An asset is being modified or cannot be leased.")
                 self.stack.callback(close, handle)
-                if _windows_final_path(handle) != _normalized_final(path):
+                # Resolve the existing 8.3 spelling too; the handle reports the
+                # normalized long name. Parent guards and sharing remain held.
+                if _windows_final_path(handle) != _normalized_final(path.resolve(strict=True)):
                     raise FilesystemBoundaryError("A leased asset target changed.")
             return self
         except BaseException:
