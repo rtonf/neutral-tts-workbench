@@ -25,7 +25,11 @@ MAX_PATH_UTF16_UNITS: Final = 240
 _BACKSLASH = chr(92)
 _INVALID_WINDOWS = frozenset('<>:/|?*' + _BACKSLASH)
 _CONTROL = frozenset(chr(i) for i in range(32)) | {chr(127)}
-_RESERVED = frozenset({"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)})
+_RESERVED = frozenset(
+    {"con", "prn", "aux", "nul", "conin$", "conout$"}
+    | {f"com{i}" for i in range(1, 10)}
+    | {f"lpt{i}" for i in range(1, 10)}
+)
 _RESERVED_DEVICE_RE = re.compile(r"(?:com|lpt)(?:[1-9¹²³])\Z", re.IGNORECASE)
 
 
@@ -181,6 +185,11 @@ def render_template(template: str, context: FilenameContext) -> str:
     result = result.rstrip(" .")
     if not result or result in {".", ".."}:
         raise FilenameTemplateError("rendered filename is empty or traversal-like")
+    # Literals and values are checked separately above, but their
+    # concatenation can still spell a device name ("nu" + "l"). Publication
+    # rejects such a basename, so neutralize it here before any generation.
+    if _is_reserved_stem(result):
+        result = f"_{result}"
     if len(result) + 4 > MAX_COMPONENT_CHARACTERS or len((result + ".wav").encode("utf-8")) > MAX_COMPONENT_UTF8_BYTES:
         raise FilenameTemplateError("rendered filename exceeds its length limit")
     _reject_surrogates(result)

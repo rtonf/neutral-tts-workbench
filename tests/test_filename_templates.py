@@ -11,6 +11,7 @@ from neutral_tts.filename_templates import (
     FilenameCollisionError,
     FilenameContext,
     FilenameTemplateError,
+    _validate_wav_basename,
     choose_collision_target,
     canonical_collision_identity,
     preview_filename,
@@ -63,6 +64,20 @@ class FilenameTemplateTests(unittest.TestCase):
             self.assertNotIn("..", rendered)
             self.assertNotIn(".", rendered)
         self.assertEqual(render_template("{title}", context(title="chapter.mp3")), "chapter_mp3")
+
+    def test_composed_device_names_are_neutralized_before_publication(self):
+        cases = (
+            ("nu{title}", {"title": "l"}),
+            ("co{title}", {"title": "n"}),
+            ("{title}{voice}", {"title": "LP", "voice": "T1"}),
+            ("{title}", {"title": "CONIN$"}),
+            ("{title}", {"title": "conout$"}),
+        )
+        for template, values in cases:
+            preview = preview_filename(template, context(**values))
+            self.assertTrue(preview.base_name.startswith("_"), preview.wav_name)
+            # The previewed name must be one that publication accepts.
+            self.assertEqual(_validate_wav_basename(preview.wav_name), preview.wav_name)
 
     def test_component_and_path_limits_are_enforced(self):
         with self.assertRaises(FilenameTemplateError):

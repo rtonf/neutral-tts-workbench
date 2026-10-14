@@ -1,3 +1,7 @@
+# Unreleased (main after 0.1.0rc3)
+
+- 保存名テンプレートで、固定文字と値の連結が `nul`・`con`・`LPT1`・`CONIN$` 等のWindows予約デバイス名になる場合、プレビュー段階で先頭に `_` を付けるよう修正しました。従来はプレビューが通っても保存時の検査で拒否され、生成完了後に保存できませんでした。`CONIN$`・`CONOUT$` も予約名として扱います。
+
 # 0.1.0rc3 — unsigned Windows release candidate
 
 0.1.0rc1の公開後のCI不備を修正したrc2は、mainでの検査で追加の問題が判明したため、tagとReleaseを公開していません。rc3はその追加修正版です。
